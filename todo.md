@@ -20,10 +20,10 @@ Run from source: `PYTHONPATH=src python3 -m qctrack ...`
   Test: `python3 -m pytest tests/test_mpg123.py -s` prints the dB match against `ffmpeg` for both MP3 samples (expect >100 dB; I measured 122.3 and 121.0) and all tests pass.
 - [~] **1.3 Vorbis/Ogg binding.**
   Test: `python3 -m pytest tests/test_vorbisfile.py -s` prints the dB match against `ffmpeg` for `sample.ogg` (expect >100 dB; I measured 135.7) and all tests pass, including a generated chained stream (stereo 44.1 kHz, mono 22.05 kHz, stereo 44.1 kHz) whose samples equal each part decoded alone.
-- [ ] **1.4 Handles freed.**
-  Test: a test decodes each file 200 times and memory stays flat.
-- [ ] **1.5 Streamed 64 KB blocks.**
-  Test: peak memory of one full decode of `Track9.mp3` is under 150 MB (`/usr/bin/time -v`).
+- [~] **1.4 Handles freed.**
+  Test: `python3 -m pytest tests/test_resources.py -s`: 200 repeated opens of each format (abandoned mid-stream, and with decode errors) plus 10 full decodes leave open files at +0 and memory growth under 5 MB (I measured ≤0.1 MB).
+- [~] **1.5 Streamed 64 KB blocks.**
+  Test: same command; each full decode of `sample.mp3`, `Track9.mp3` and `sample.ogg` peaks under 150 MB (I measured 56 MB, including Python and NumPy). Or by hand: `/usr/bin/time -v python3 -c 'import sys; sys.path.insert(0,"src"); from qctrack.native.mpg123 import Mpg123Decoder as D; [None for _ in D("/home/sasikala/Lab/samples/Track9.mp3").blocks()]' 2>&1 | grep Maximum`.
 
 ## M2 Measurements (pass 1 and 2)
 - [ ] **2.1 MP3 frame scanner + LAME tag (F1.01–F1.08, F2.01–F2.03).**
