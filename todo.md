@@ -16,13 +16,13 @@ Run from source: `PYTHONPATH=src python3 -m qctrack ...`
 ## M1 Vertical slice (Q-A4)
 - [x] **1.1 Format detection (F1.10).** By content, never extension.
   Test: copy `sample.mp3` to `/tmp/x.ogg`; `qctrack scan /tmp/x.ogg --quick` reports MP3. `sample.flac` is reported Unsupported (FLAC), not an error.
-- [~] **1.2 mpg123 binding.** Decodes with RVA off and QUIET.
+- [x] **1.2 mpg123 binding.** Decodes with RVA off and QUIET.
   Test: `python3 -m pytest tests/test_mpg123.py -s` prints the dB match against `ffmpeg` for both MP3 samples (expect >100 dB; I measured 122.3 and 121.0) and all tests pass.
-- [~] **1.3 Vorbis/Ogg binding.**
+- [x] **1.3 Vorbis/Ogg binding.**
   Test: `python3 -m pytest tests/test_vorbisfile.py -s` prints the dB match against `ffmpeg` for `sample.ogg` (expect >100 dB; I measured 135.7) and all tests pass, including a generated chained stream (stereo 44.1 kHz, mono 22.05 kHz, stereo 44.1 kHz) whose samples equal each part decoded alone.
-- [~] **1.4 Handles freed.**
+- [x] **1.4 Handles freed.**
   Test: `python3 -m pytest tests/test_resources.py -s`: 200 repeated opens of each format (abandoned mid-stream, and with decode errors) plus 10 full decodes leave open files at +0 and memory growth under 5 MB (I measured ≤0.1 MB).
-- [~] **1.5 Streamed 64 KB blocks.**
+- [x] **1.5 Streamed 64 KB blocks.**
   Test: same command; each full decode of `sample.mp3`, `Track9.mp3` and `sample.ogg` peaks under 150 MB (I measured 37 MB, including Python and NumPy; 36 MB by hand). Or by hand: `/usr/bin/time -v python3 -c 'import sys; sys.path.insert(0,"src"); from qctrack.native.mpg123 import Mpg123Decoder as D; [None for _ in D("/home/sasikala/Lab/samples/Track9.mp3").blocks()]' 2>&1 | grep Maximum`.
 
 ## M2 Measurements (pass 1 and 2)
