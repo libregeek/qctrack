@@ -107,7 +107,7 @@ def test_repeated_full_decodes_do_not_grow_memory() -> None:
 
 
 _DECODE_SCRIPT = """
-import resource
+import os
 import sys
 
 sys.path.insert(0, sys.argv[2])
@@ -117,10 +117,21 @@ from qctrack.native.vorbisfile import VorbisDecoder
 
 path = sys.argv[1]
 cls = VorbisDecoder if path.endswith('.ogg') else Mpg123Decoder
+page = os.sysconf("SC_PAGE_SIZE")
+
+
+def rss():
+    with open("/proc/self/statm") as f:
+        return int(f.read().split()[1]) * page / 1e6
+
+
+# Current RSS is sampled instead of ru_maxrss, which a child inherits from its parent.
+peak = rss()
 with cls(path) as d:
     for b in d.blocks():
         np.abs(b).max()
-print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024)
+        peak = max(peak, rss())
+print(peak)
 """
 
 
