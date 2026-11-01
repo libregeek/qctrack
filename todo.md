@@ -16,8 +16,8 @@ Run from source: `PYTHONPATH=src python3 -m qctrack ...`
 ## M1 Vertical slice (Q-A4)
 - [x] **1.1 Format detection (F1.10).** By content, never extension.
   Test: copy `sample.mp3` to `/tmp/x.ogg`; `qctrack scan /tmp/x.ogg --quick` reports MP3. `sample.flac` is reported Unsupported (FLAC), not an error.
-- [ ] **1.2 mpg123 binding.** Decodes with RVA off and QUIET.
-  Test: peak/sample count of `sample.mp3` matches `ffmpeg` output within tolerance (test prints the dB match, expect >100 dB).
+- [~] **1.2 mpg123 binding.** Decodes with RVA off and QUIET.
+  Test: `python3 -m pytest tests/test_mpg123.py -s` prints the dB match against `ffmpeg` for both MP3 samples (expect >100 dB; I measured 122.3 and 121.0) and all tests pass.
 - [ ] **1.3 Vorbis/Ogg binding.**
   Test: same comparison for `sample.ogg`.
 - [ ] **1.4 Handles freed.**
