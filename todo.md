@@ -18,8 +18,8 @@ Run from source: `PYTHONPATH=src python3 -m qctrack ...`
   Test: copy `sample.mp3` to `/tmp/x.ogg`; `qctrack scan /tmp/x.ogg --quick` reports MP3. `sample.flac` is reported Unsupported (FLAC), not an error.
 - [~] **1.2 mpg123 binding.** Decodes with RVA off and QUIET.
   Test: `python3 -m pytest tests/test_mpg123.py -s` prints the dB match against `ffmpeg` for both MP3 samples (expect >100 dB; I measured 122.3 and 121.0) and all tests pass.
-- [ ] **1.3 Vorbis/Ogg binding.**
-  Test: same comparison for `sample.ogg`.
+- [~] **1.3 Vorbis/Ogg binding.**
+  Test: `python3 -m pytest tests/test_vorbisfile.py -s` prints the dB match against `ffmpeg` for `sample.ogg` (expect >100 dB; I measured 135.7) and all tests pass, including a generated chained stream (stereo 44.1 kHz, mono 22.05 kHz, stereo 44.1 kHz) whose samples equal each part decoded alone.
 - [ ] **1.4 Handles freed.**
   Test: a test decodes each file 200 times and memory stays flat.
 - [ ] **1.5 Streamed 64 KB blocks.**
