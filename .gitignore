@@ -1,1 +1,17 @@
 CLAUDE.md
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+dist/
+build/
+*.egg-info/
+# real audio is never committed
+*.mp3
+*.ogg
+*.oga
+*.flac
+*.opus
+*.wav

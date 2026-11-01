@@ -6,11 +6,11 @@ Real test audio: `~/Lab/samples` (`sample.mp3`, `Track9.mp3`, `sample.ogg`, `sam
 Run from source: `PYTHONPATH=src python3 -m qctrack ...`
 
 ## M0 Setup
-- [ ] **0.1 Dev tools installed.** `sudo dnf install python3-jinja2 python3-tqdm python3-pytest python3-hypothesis python3-mypy python3-hatchling ruff` (`ffmpeg` is already present; the README "Development" section lists the full set)
+- [x] **0.1 Dev tools installed.** `sudo dnf install python3-jinja2 python3-tqdm python3-pytest python3-hypothesis python3-mypy python3-hatchling ruff` (`ffmpeg` is already present; the README "Development" section lists the full set)
   Test: `python3 -c "import jinja2, tqdm, pytest, hypothesis"` and `ruff --version` succeed.
-- [ ] **0.2 Project skeleton.** `pyproject.toml`, `src/qctrack/{native,core,report,cli}`, `tests/`.
+- [x] **0.2 Project skeleton.** `pyproject.toml`, `src/qctrack/{native,core,report,cli}`, `tests/`.
   Test: `PYTHONPATH=src python3 -m qctrack --version` prints a version; `pytest` runs (0 failures); `mypy --strict src` and `ruff check` pass.
-- [ ] **0.3 Real samples never enter git.** `.gitignore` covers audio files.
+- [x] **0.3 Real samples never enter git.** `.gitignore` covers audio files.
   Test: `git status` shows no audio files after tests run.
 
 ## M1 Vertical slice (Q-A4)

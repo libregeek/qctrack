@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "qctrack"
+version = "0.1.0"
+description = "Audio quality scoring and fake-bitrate detection"
+readme = "README.md"
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = ["numpy", "mutagen", "jinja2", "tqdm"]
+
+[project.optional-dependencies]
+spectrograms = ["pillow"]
+
+[project.scripts]
+qctrack = "qctrack.cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/qctrack"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.mypy]
+strict = true
+mypy_path = "src"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

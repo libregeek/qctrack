@@ -121,7 +121,7 @@ sudo dnf install python3-pytest python3-hypothesis python3-mypy python3-hatchlin
 ```bash
 PYTHONPATH=src python3 -m pytest      # tests
 mypy --strict src                     # type checks
-ruff check . && ruff format --check . # lint and formatting
+ruff check . && ruff format --check src tests   # lint and formatting
 ```
 
 Test audio is not stored in the repository. Real-file tests read from a folder of your own samples, and generated fixtures live in `tests/fixtures`. Progress is tracked in [todo.md](todo.md).
