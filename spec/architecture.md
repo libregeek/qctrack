@@ -74,7 +74,7 @@ qctrack/
 
 ### 4.1 Pipeline
 
-1. **Detect:** in-house code reads the file's leading bytes and, for Ogg, the first packet of each stream. The file extension is never consulted (REQ-FMT-04), so Mutagen's name-based `File()` helper is not used. Opus, FLAC and Speex streams become Unsupported in phase 1 (REQ-FMT-02).
+1. **Detect:** in-house code reads the file's leading bytes and, for Ogg, the first packet of each stream. The file extension is never consulted to decide a format (REQ-FMT-04), so Mutagen's name-based `File()` helper is not used. When scanning a folder, a fixed list of audio extensions only chooses which files to examine; files named on the command line are always examined. Opus, FLAC and Speex streams become Unsupported in phase 1 (REQ-FMT-02).
 2. **Pass 1:** a per-codec scanner walks the raw bytes and headers, and Mutagen reads tags and encoder details. `--quick` stops here (REQ-ANL-02).
 3. **Pass 2:** decode once and send fixed-size NumPy blocks to each `PcmFactor`, so memory stays bounded (REQ-NFR-03).
 4. **Pass 3:** in the parent, compute derived factors and apply the profile. This step is a pure function of the measurements and the profile.

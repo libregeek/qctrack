@@ -14,7 +14,7 @@ Run from source: `PYTHONPATH=src python3 -m qctrack ...`
   Test: `git status` shows no audio files after tests run.
 
 ## M1 Vertical slice (Q-A4)
-- [ ] **1.1 Format detection (F1.10).** By content, never extension.
+- [x] **1.1 Format detection (F1.10).** By content, never extension.
   Test: copy `sample.mp3` to `/tmp/x.ogg`; `qctrack scan /tmp/x.ogg --quick` reports MP3. `sample.flac` is reported Unsupported (FLAC), not an error.
 - [ ] **1.2 mpg123 binding.** Decodes with RVA off and QUIET.
   Test: peak/sample count of `sample.mp3` matches `ffmpeg` output within tolerance (test prints the dB match, expect >100 dB).
