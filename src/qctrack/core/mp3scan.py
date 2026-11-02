@@ -70,6 +70,11 @@ class LameTag:
     #: Declared length of the audio data in bytes (0 if not stored).
     music_length: int
     music_crc: int
+    #: Peak sample amplitude stored by the encoder (1.0 is full scale); 0 when unset.
+    peak: float
+    #: ReplayGain values the encoder stored, in dB; None when the field is empty.
+    radio_gain_db: float | None
+    audiophile_gain_db: float | None
     #: True when the tag's own CRC-16 matches its first 190 bytes.
     tag_crc_ok: bool
 
@@ -354,6 +359,9 @@ def _parse_tag_frame(
     delay = (dp[0] << 4) | (dp[1] >> 4)
     padding = ((dp[1] & 0x0F) << 8) | dp[2]
     preset = ((frame[lame_off + 26] << 8) | frame[lame_off + 27]) & 0x07FF
+    peak = struct.unpack_from(">I", frame, lame_off + 11)[0] / (1 << 23)
+    radio = _replay_gain_field(struct.unpack_from(">H", frame, lame_off + 15)[0])
+    audiophile = _replay_gain_field(struct.unpack_from(">H", frame, lame_off + 17)[0])
     music_length = struct.unpack_from(">I", frame, lame_off + 28)[0]
     music_crc = struct.unpack_from(">H", frame, lame_off + 32)[0]
     tag_crc = struct.unpack_from(">H", frame, lame_off + 34)[0]
@@ -371,9 +379,20 @@ def _parse_tag_frame(
         padding_samples=padding,
         music_length=music_length,
         music_crc=music_crc,
+        peak=peak,
+        radio_gain_db=radio,
+        audiophile_gain_db=audiophile,
         tag_crc_ok=crc_ok,
     )
     return tag, lame, encoder
+
+
+def _replay_gain_field(v: int) -> float | None:
+    """Decode LAME's 16-bit gain field: 3-bit name, 3-bit originator, sign, 9-bit tenths."""
+    if (v >> 13) == 0:  # name 0: not set
+        return None
+    tenths = v & 0x1FF
+    return -tenths / 10 if v & 0x200 else tenths / 10
 
 
 def _ascii(b: bytes) -> str:

@@ -2,6 +2,7 @@ import os
 import struct
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -174,7 +175,7 @@ def test_matches_ffprobe_and_mutagen(name: str) -> None:
     assert r.counted_duration_s == pytest.approx(float(fields["duration"]), abs=0.05)
     assert r.sample_rate == int(fields["sample_rate"])
     assert (r.channel_mode == "Mono") == (fields["channels"] == "1")
-    info = MP3(path).info
+    info: Any = MP3(path).info
     assert r.sample_rate == info.sample_rate
     assert r.counted_duration_s == pytest.approx(info.length, abs=0.05)
     mutagen_mode = {1: "CBR", 2: "VBR", 3: "ABR"}.get(int(info.bitrate_mode))

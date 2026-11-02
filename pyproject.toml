@@ -35,3 +35,12 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+
+# Mutagen ships no type hints; tests build tags with it directly.
+[[tool.mypy.overrides]]
+module = ["qctrack.core.tags", "test_tags", "test_mp3scan"]
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+module = ["mutagen", "mutagen.*"]
+implicit_reexport = true

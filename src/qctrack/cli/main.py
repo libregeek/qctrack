@@ -12,6 +12,7 @@ from qctrack import __version__
 from qctrack.core.detect import Detection, Format, detect_file
 from qctrack.core.mp3scan import Mp3Scan, scan_mp3
 from qctrack.core.oggscan import OggScan, scan_ogg
+from qctrack.core.tags import StoredGain, TagInfo, lame_gains, read_tags
 
 # Used only to choose which files inside a folder are worth examining. The format of
 # a file is always decided from its content (REQ-FMT-04). Files named on the command
@@ -130,6 +131,34 @@ def _ogg_lines(r: OggScan) -> list[str]:
     return lines
 
 
+def _tag_lines(t: TagInfo, lame_gain: list[StoredGain]) -> list[str]:
+    lines = [f"tags: {', '.join(t.formats) if t.formats else 'none'}"]
+    if t.formats:
+        shown = [
+            f"{label} {value}"
+            for label, value in (
+                ("title", t.title),
+                ("artist", t.artist),
+                ("album", t.album),
+                ("track", t.track_number),
+            )
+        ]
+        lines.append("  " + ", ".join(shown))
+        if t.pictures:
+            lines.append(f"  pictures: {t.pictures} ({t.picture_bytes} bytes)")
+    gains = t.gains + lame_gain
+    if gains:
+        for g in gains:
+            gain = f"{g.gain_db:+.2f} dB" if g.gain_db is not None else "no gain"
+            peak = f", peak {g.peak:.6f}" if g.peak else ""
+            lines.append(f"  stored gain ({g.source}, {g.scope}): {gain}{peak}")
+    else:
+        lines.append("  stored gain: none")
+    if t.problems:
+        lines.append("  tag problems: " + "; ".join(t.problems))
+    return lines
+
+
 def _scan(args: argparse.Namespace) -> int:
     problems = 0
     for path in discover(args.paths, args.follow_links):
@@ -142,11 +171,14 @@ def _scan(args: argparse.Namespace) -> int:
         print(f"{path}\t{describe(d)}")
         if args.verbose and d.format in (Format.MP3, Format.VORBIS):
             try:
-                lines = (
-                    _mp3_lines(scan_mp3(path))
-                    if d.format is Format.MP3
-                    else _ogg_lines(scan_ogg(path))
-                )
+                lame_gain: list[StoredGain] = []
+                if d.format is Format.MP3:
+                    mp3 = scan_mp3(path)
+                    lines = _mp3_lines(mp3)
+                    lame_gain = lame_gains(mp3.lame) if mp3.lame else []
+                else:
+                    lines = _ogg_lines(scan_ogg(path))
+                lines += _tag_lines(read_tags(path, d.format), lame_gain)
                 for line in lines:
                     print(f"    {line}")
             except OSError as e:

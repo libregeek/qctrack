@@ -30,8 +30,8 @@ Run from source: `PYTHONPATH=src python3 -m qctrack ...`
   Test: `scan sample.mp3 -v` shows bitrate, mode, encoder, lowpass and declared vs counted length; results agree with `mediainfo`/`mp3guessenc` if installed (neither is on this machine; the tests compare against `ffprobe` and Mutagen instead). Also `python3 -m pytest tests/test_mp3scan.py -s`.
 - [~] **2.2 Ogg Vorbis header/page checks (F2.05, F2.14).**
   Test: `scan sample.ogg -v` agrees with `ogginfo` (not installed here; `sudo dnf install vorbis-tools` to compare; the tests compare against `ffprobe` and Mutagen instead). Also `python3 -m pytest tests/test_oggscan.py -s`.
-- [ ] **2.3 Tags and stored gain (F1.09).**
-  Test: tags shown match `mutagen-inspect`.
+- [~] **2.3 Tags and stored gain (F1.09).**
+  Test: tags shown by `scan -v` match `mutagen-inspect` for each sample. Also `python3 -m pytest tests/test_tags.py -s`. None of the samples carry ReplayGain tags; the tests cover them with generated files.
 - [ ] **2.4 Clipping, channel anomalies (F2.07, F2.12).**
   Test: a generated clipped file reports clipping; clean sample does not.
 - [ ] **2.5 Peak, loudness, dynamic range (F2.08–F2.10) via libebur128.**

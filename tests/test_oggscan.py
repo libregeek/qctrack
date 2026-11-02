@@ -52,6 +52,16 @@ def comment(vendor: bytes = b"TestEnc 1.0") -> bytes:
     return b"\x03vorbis" + struct.pack("<I", len(vendor)) + vendor + struct.pack("<I", 0) + b"\x01"
 
 
+def comment_packet_page(comments: list[bytes], serial: int = 7) -> bytes:
+    """Page 1 of a stream, holding a Vorbis comment header with the given comments."""
+    vendor = b"TestEnc 1.0"
+    body = b"\x03vorbis" + struct.pack("<I", len(vendor)) + vendor
+    body += struct.pack("<I", len(comments))
+    for c in comments:
+        body += struct.pack("<I", len(c)) + c
+    return page(serial, 1, body + b"\x01", 0)
+
+
 def stream(serial: int, granules: tuple[int, ...], eos: bool = True) -> bytes:
     out = page(serial, 0, vorbis_id(), 0, 0x02) + page(serial, 1, comment(), 0)
     for i, g in enumerate(granules):
