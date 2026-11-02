@@ -26,8 +26,8 @@ Run from source: `PYTHONPATH=src python3 -m qctrack ...`
   Test: same command; each full decode of `sample.mp3`, `Track9.mp3` and `sample.ogg` peaks under 150 MB (I measured 37 MB, including Python and NumPy; 36 MB by hand). Or by hand: `/usr/bin/time -v python3 -c 'import sys; sys.path.insert(0,"src"); from qctrack.native.mpg123 import Mpg123Decoder as D; [None for _ in D("/home/sasikala/Lab/samples/Track9.mp3").blocks()]' 2>&1 | grep Maximum`.
 
 ## M2 Measurements (pass 1 and 2)
-- [ ] **2.1 MP3 frame scanner + LAME tag (F1.01–F1.08, F2.01–F2.03).**
-  Test: `scan sample.mp3 -v` shows bitrate, mode, encoder, lowpass and declared vs counted length; results agree with `mediainfo`/`mp3guessenc` if installed.
+- [~] **2.1 MP3 frame scanner + LAME tag (F1.01–F1.08, F2.01–F2.03).**
+  Test: `scan sample.mp3 -v` shows bitrate, mode, encoder, lowpass and declared vs counted length; results agree with `mediainfo`/`mp3guessenc` if installed (neither is on this machine; the tests compare against `ffprobe` and Mutagen instead). Also `python3 -m pytest tests/test_mp3scan.py -s`.
 - [ ] **2.2 Ogg Vorbis header/page checks (F2.05, F2.14).**
   Test: `scan sample.ogg -v` agrees with `ogginfo`.
 - [ ] **2.3 Tags and stored gain (F1.09).**

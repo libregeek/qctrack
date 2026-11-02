@@ -54,7 +54,7 @@ def detect_file(path: str | Path) -> Detection:
 
 
 def detect(f: BinaryIO) -> Detection:
-    start = _skip_id3v2(f)
+    start = skip_id3v2(f)
     f.seek(start)
     head = f.read(4)
     if head == b"fLaC":
@@ -69,7 +69,7 @@ def detect(f: BinaryIO) -> Detection:
     return Detection(Format.UNKNOWN)
 
 
-def _skip_id3v2(f: BinaryIO) -> int:
+def skip_id3v2(f: BinaryIO) -> int:
     """Return the offset just past any leading ID3v2 tags."""
     pos = 0
     for _ in range(_MAX_ID3_TAGS):
@@ -88,7 +88,7 @@ def _skip_id3v2(f: BinaryIO) -> int:
 
 # --- MPEG audio -----------------------------------------------------------------------
 
-_BITRATES = {
+BITRATES = {
     # (version, layer) -> kbps by index 1..14
     (1, 1): (32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448),
     (1, 2): (32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384),
@@ -97,7 +97,7 @@ _BITRATES = {
     (2, 2): (8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160),
     (2, 3): (8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160),
 }
-_SAMPLE_RATES = {1: (44100, 48000, 32000), 2: (22050, 24000, 16000), 25: (11025, 12000, 8000)}
+SAMPLE_RATES = {1: (44100, 48000, 32000), 2: (22050, 24000, 16000), 25: (11025, 12000, 8000)}
 
 
 def parse_mpeg_header(h: bytes) -> tuple[int, int, int] | None:
@@ -118,8 +118,8 @@ def parse_mpeg_header(h: bytes) -> tuple[int, int, int] | None:
     sr_idx = (h[2] >> 2) & 3
     if br_idx in (0, 15) or sr_idx == 3:
         return None
-    kbps = _BITRATES[(1 if version == 1 else 2, layer)][br_idx - 1]
-    rate = _SAMPLE_RATES[version][sr_idx]
+    kbps = BITRATES[(1 if version == 1 else 2, layer)][br_idx - 1]
+    rate = SAMPLE_RATES[version][sr_idx]
     pad = (h[2] >> 1) & 1
     if layer == 1:
         length = (12 * kbps * 1000 // rate + pad) * 4
