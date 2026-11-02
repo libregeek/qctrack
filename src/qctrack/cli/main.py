@@ -11,6 +11,7 @@ from pathlib import Path
 from qctrack import __version__
 from qctrack.core.detect import Detection, Format, detect_file
 from qctrack.core.mp3scan import Mp3Scan, scan_mp3
+from qctrack.core.oggscan import OggScan, scan_ogg
 
 # Used only to choose which files inside a folder are worth examining. The format of
 # a file is always decided from its content (REQ-FMT-04). Files named on the command
@@ -95,6 +96,40 @@ def _mp3_lines(r: Mp3Scan) -> list[str]:
     return lines
 
 
+def _ogg_lines(r: OggScan) -> list[str]:
+    lines: list[str] = []
+    layout = f"{len(r.streams)} stream(s) in {r.link_count} link(s)"
+    if r.chained:
+        layout += ", chained"
+    if r.multiplexed:
+        layout += ", multiplexed"
+    lines.append(f"layout: {layout}, {r.pages} pages")
+    for s in r.vorbis_streams:
+        v = s.vorbis
+        if v is None:
+            continue
+        nominal = (
+            f"{v.bitrate_nominal // 1000} kbps nominal" if v.bitrate_nominal > 0 else "no nominal"
+        )
+        dur = s.duration_s or 0.0
+        lines.append(
+            f"vorbis {s.serial:#x}: version {v.version}, {v.rate} Hz, {v.channels} ch, "
+            f"{nominal}, {dur:.2f} s"
+        )
+        lines.append(f"  encoder: {s.vendor or 'none stored'}")
+    lines.append(f"bitrate: {r.average_bitrate_kbps:.0f} kbps avg, length {r.duration_s:.2f} s")
+    lines.append(
+        f"structure: {r.crc_failures} CRC failures, {r.lost_pages} lost pages, "
+        f"{r.sequence_errors} sequence errors, {r.orphan_pages} orphan pages, "
+        f"{r.granule_backwards} granule reversals"
+    )
+    lines.append(
+        f"unidentified: {r.unidentified_bytes} bytes ({r.unidentified_fraction * 100:.3f}%), "
+        f"truncated: {'yes' if r.truncated else 'no'}"
+    )
+    return lines
+
+
 def _scan(args: argparse.Namespace) -> int:
     problems = 0
     for path in discover(args.paths, args.follow_links):
@@ -105,9 +140,14 @@ def _scan(args: argparse.Namespace) -> int:
             problems += 1
             continue
         print(f"{path}\t{describe(d)}")
-        if args.verbose and d.format is Format.MP3:
+        if args.verbose and d.format in (Format.MP3, Format.VORBIS):
             try:
-                for line in _mp3_lines(scan_mp3(path)):
+                lines = (
+                    _mp3_lines(scan_mp3(path))
+                    if d.format is Format.MP3
+                    else _ogg_lines(scan_ogg(path))
+                )
+                for line in lines:
                     print(f"    {line}")
             except OSError as e:
                 print(f"    Error ({e.strerror})")

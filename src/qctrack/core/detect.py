@@ -156,7 +156,7 @@ def _find_mpeg_audio(f: BinaryIO, start: int) -> int | None:
 # --- Ogg ------------------------------------------------------------------------------
 
 
-def _classify_ogg_packet(pkt: bytes) -> Format:
+def classify_ogg_packet(pkt: bytes) -> Format:
     if pkt.startswith(b"\x01vorbis"):
         return Format.VORBIS
     if pkt.startswith(b"OpusHead"):
@@ -183,7 +183,7 @@ def _detect_ogg(f: BinaryIO) -> Detection:
             break
         body = sum(data[pos + 27 : seg_end])
         page_end = seg_end + body
-        streams.append(_classify_ogg_packet(data[seg_end : min(page_end, len(data))]))
+        streams.append(classify_ogg_packet(data[seg_end : min(page_end, len(data))]))
         pos = page_end
     if not streams:
         return Detection(Format.UNKNOWN)
