@@ -32,8 +32,8 @@ Run from source: `PYTHONPATH=src python3 -m qctrack ...`
   Test: `scan sample.ogg -v` agrees with `ogginfo` (not installed here; `sudo dnf install vorbis-tools` to compare; the tests compare against `ffprobe` and Mutagen instead). Also `python3 -m pytest tests/test_oggscan.py -s`.
 - [x] **2.3 Tags and stored gain (F1.09).**
   Test: tags shown by `scan -v` match `mutagen-inspect` for each sample. Also `python3 -m pytest tests/test_tags.py -s`. None of the samples carry ReplayGain tags; the tests cover them with generated files.
-- [ ] **2.4 Clipping, channel anomalies (F2.07, F2.12).**
-  Test: a generated clipped file reports clipping; clean sample does not.
+- [~] **2.4 Clipping, channel anomalies (F2.07, F2.12).** `src/qctrack/core/pcm.py`: streaming analysers (measurements only; Pass/Warn/Fail scoring comes later).
+  Test: `python3 -m pytest tests/test_pcm.py -s`: generated MP3 and Ogg files (hard-clipped sine vs. quiet sine) report clipped runs and the clean ones report none; runs are counted across block edges; dead channel, fake stereo and inverted polarity are flagged. Real samples print their figures. `Track9.mp3` is clean (1 run of 3 samples, 0.0000%); `sample.mp3` shows 0.0125% and `sample.ogg` 0.19% (loud masters / decoder overshoot, see Q-A10).
 - [ ] **2.5 Peak, loudness, dynamic range (F2.08–F2.10) via libebur128.**
   Test: LUFS and LRA within 0.1 of `ffmpeg -af ebur128` on `sample.mp3`.
 - [ ] **2.6 Spectral cutoff and derived factors (F3.01–F3.04, F3.06).**
