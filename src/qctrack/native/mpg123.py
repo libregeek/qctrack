@@ -2,7 +2,10 @@
 
 Settings that matter for measurement accuracy:
 
-* ``MPG123_QUIET``: errors arrive as return codes, never as terminal output.
+* ``MPG123_QUIET``: nothing reaches the terminal. Hard failures still arrive as return
+  codes. libmpg123 conceals damaged frames and lost sync without any return code and
+  reports them only as text, so ``capture_messages=True`` turns QUIET off, raises the
+  verbosity and collects that text in :attr:`Mpg123Decoder.messages` (see F2.06).
 * ``MPG123_FORCE_FLOAT``: float samples that keep values above full scale (F2.07, F2.08).
 * ``MPG123_RVA_OFF``: stored ReplayGain must never alter the measured samples.
 
@@ -11,6 +14,7 @@ Constants come from ``mpg123.h`` and ``fmt123.h`` (libmpg123 1.32).
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import os
 from collections.abc import Iterator
@@ -22,8 +26,10 @@ import numpy as np
 import numpy.typing as npt
 
 from qctrack.native._loader import load_library
+from qctrack.native._stderr import StderrCapture
 
 # enum mpg123_parms
+_PARAM_VERBOSE = 0
 _PARAM_FLAGS = 1
 _PARAM_RVA = 5
 # enum mpg123_param_flags
@@ -93,8 +99,9 @@ def _strerror(code: int) -> str:
 class Mpg123Decoder:
     """Decode one MP3 file. Use as a context manager so handles are always freed."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, capture_messages: bool = False) -> None:
         self._lib = _library()
+        self._capture = StderrCapture() if capture_messages else None
         self._mh: int | None = None
         self._fd: int | None = None
         self.rate = 0
@@ -104,22 +111,41 @@ class Mpg123Decoder:
         err = ctypes.c_int(0)
         mh = self._lib.mpg123_new(None, ctypes.byref(err))
         if not mh:
+            self.close()
             raise Mpg123Error(_strerror(err.value), err.value)
         self._mh = mh
         try:
             self._configure()
             # Open the file ourselves so it is opened with read-only flags (REQ-ACC-03).
             self._fd = os.open(path, os.O_RDONLY)
-            self._check(self._lib.mpg123_open_fd(mh, self._fd))
-            self._refresh_format()
+            with self._scope():
+                self._check(self._lib.mpg123_open_fd(mh, self._fd))
+                self._refresh_format()
         except BaseException:
             self.close()
             raise
 
+    def _scope(self) -> contextlib.AbstractContextManager[None]:
+        """Capture the library's stderr text for one call, when asked to."""
+        return self._capture.active() if self._capture else contextlib.nullcontext()
+
+    @property
+    def messages(self) -> list[str]:
+        """Lines libmpg123 wrote to stderr (empty unless ``capture_messages``)."""
+        return self._capture.lines if self._capture else []
+
+    @property
+    def messages_dropped(self) -> int:
+        """Lines beyond the stored limit; they are counted but not kept."""
+        return self._capture.dropped if self._capture else 0
+
     def _configure(self) -> None:
-        self._check(
-            self._lib.mpg123_param2(self._mh, _PARAM_FLAGS, _FLAG_QUIET | _FLAG_FORCE_FLOAT, 0.0)
-        )
+        if self._capture:
+            flags, verbose = _FLAG_FORCE_FLOAT, 2.0
+            self._check(self._lib.mpg123_param2(self._mh, _PARAM_VERBOSE, 2, verbose))
+        else:
+            flags = _FLAG_QUIET | _FLAG_FORCE_FLOAT
+        self._check(self._lib.mpg123_param2(self._mh, _PARAM_FLAGS, flags, 0.0))
         self._check(self._lib.mpg123_param2(self._mh, _PARAM_RVA, _RVA_OFF, 0.0))
 
     def _check(self, rc: int) -> None:
@@ -162,11 +188,15 @@ class Mpg123Decoder:
             while filled < BLOCK_BYTES:
                 done = ctypes.c_size_t(0)
                 ptr = ctypes.c_void_p(buf.ctypes.data + filled)
-                rc = self._lib.mpg123_read(self._mh, ptr, BLOCK_BYTES - filled, ctypes.byref(done))
+                with self._scope():
+                    rc = self._lib.mpg123_read(
+                        self._mh, ptr, BLOCK_BYTES - filled, ctypes.byref(done)
+                    )
                 filled += done.value
                 if rc == _NEW_FORMAT:
                     old = (self.rate, self.channels)
-                    self._refresh_format()
+                    with self._scope():
+                        self._refresh_format()
                     if (self.rate, self.channels) != old and not first:
                         self.format_changes += 1
                         if filled:
@@ -192,6 +222,8 @@ class Mpg123Decoder:
         if self._fd is not None:
             os.close(self._fd)
             self._fd = None
+        if self._capture is not None:
+            self._capture.close()
 
     def __enter__(self) -> Self:
         return self

@@ -103,7 +103,7 @@ def score(measurements: Sequence[Measurement], profile: Profile) -> TrackScore:
 
 - **Read-only:** Python and the decoder libraries open files read-only (REQ-ACC-01, REQ-ACC-03). No code path opens an analysed file for writing.
 - **No network:** nothing in the application or its dependencies is asked to use the network, and no network module is imported (REQ-NFR-07).
-- **Quiet decoders:** `libmpg123` runs with `MPG123_QUIET`, so errors arrive as return codes rather than terminal output.
+- **Quiet decoders:** `libmpg123` runs with `MPG123_QUIET`, so nothing reaches the terminal. The exception is the F2.06 decode (section 5): `libmpg123` returns OK while it conceals broken frames and resyncs, and reports them only as text on stderr (verified on corrupted copies: 40 flipped bytes, a 5 KB hole and a truncation all returned no error code). For that decode QUIET is off, verbosity is 2, and fd 2 is redirected into a pipe for the duration of each decoder call only (`native/_stderr.py`), so the caller's own stderr is never swallowed.
 - **No gain applied:** `libmpg123` runs with its RVA setting off, so stored gain never alters measured samples. A wrong setting here changed a measured peak from 1.25 to 1.13 in the prototype, so a test must cover it.
 
 ### 4.4 Worker isolation
@@ -176,7 +176,7 @@ This covers the phase 1 factors. F1.11 and F3.10 are FLAC only and arrive in pha
 | F2.01–F2.03 Structure, truncation, unidentified data | In-house MP3 scanner; `libogg` for Ogg pages. Known tags, including Lyrics3 and APE, count as metadata rather than damage. |
 | F2.04 Embedded audio checksum | CRC-16 over the audio, using `python3-crcmod` if it qualifies (Q-A6) |
 | F2.05 Block-level CRC | CRC-16 for MP3 frames; `libogg` page checks for Ogg |
-| F2.06 Decode errors | `libmpg123` and `libvorbisfile` return codes, classified by the scanner so that known tags do not count as errors |
+| F2.06 Decode errors | `libmpg123`: its stderr text (`broken frame N` counts concealed frames; `Illegal Audio-MPEG-Header … at offset N` is a lost sync, ignored when the offset is at or past the scanner's end of audio, so trailing ID3v1, APE and Lyrics3 tags are not errors). `libvorbisfile`: `OV_HOLE` count. Both decoders drop a final partial unit silently, so the scanner's truncated tail counts as one error (overlaps F2.02 by design). Code in `core/decode_errors.py`. |
 | F2.07, F2.12 Clipping, channel anomalies | In-house NumPy analysis |
 | F2.08–F2.10 Peak, loudness, dynamic range | `libebur128`: true peak, integrated loudness, loudness range. Peak-to-loudness ratio is derived from these. |
 | F2.14 Ogg stream layout | `libogg` |
