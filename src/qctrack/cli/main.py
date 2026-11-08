@@ -28,6 +28,8 @@ from qctrack.core.profile import (
     resolve_profile,
 )
 from qctrack.core.scoring import Status, gate_legend
+from qctrack.core.storage import classify, default_jobs
+from qctrack.core.storage import describe as describe_storage
 from qctrack.core.tags import StoredGain, TagInfo, lame_gains
 
 # Used only to choose which files inside a folder are worth examining. The format of
@@ -86,7 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="exit with code 4 if any track scores below SCORE (0-100)",
     )
     scan.add_argument(
-        "-j", "--jobs", type=_positive_int, default=1, metavar="N", help="parallel workers"
+        "-j",
+        "--jobs",
+        type=_positive_int,
+        metavar="N",
+        help="parallel workers (default: one per CPU core on SSDs, two on spinning disks "
+        "and network shares)",
     )
     scan.add_argument(
         "--timeout",
@@ -120,8 +127,19 @@ def build_parser() -> argparse.ArgumentParser:
 def discover(paths: Sequence[Path], follow_links: bool) -> Iterator[Path]:
     for p in paths:
         if p.is_dir():
+            seen: set[tuple[int, int]] = set()  # real folders entered, to stop link loops
             for root, dirs, files in os.walk(p, followlinks=follow_links):
                 dirs.sort()
+                if follow_links:
+                    try:
+                        st = os.stat(root)
+                    except OSError:
+                        dirs.clear()
+                        continue
+                    if (st.st_dev, st.st_ino) in seen:
+                        dirs.clear()
+                        continue
+                    seen.add((st.st_dev, st.st_ino))
                 for name in sorted(files):
                     if Path(name).suffix.lower() in _FOLDER_CANDIDATE_EXTENSIONS:
                         yield Path(root) / name
@@ -426,13 +444,19 @@ def _scan(args: argparse.Namespace) -> int:
     paint = Painter(should_color(args.color, sys.stdout))
     files = list(discover(args.paths, args.follow_links))
     by_index: dict[int, TrackReport] = {}
+    jobs = args.jobs
+    if jobs is None:
+        kinds = [classify(p) for p in args.paths]
+        jobs = default_jobs(kinds)
+        if args.verbose:
+            print(f"qctrack: {jobs} worker(s), storage: {describe_storage(kinds)}", file=sys.stderr)
     cache = _open_cache(args.no_cache)
     try:
         todo = _from_cache(cache, files, args.quick, profile, by_index)
         progress = Progress(len(todo), sys.stderr)
         try:
             with WorkerPool(
-                args.jobs, quick=args.quick, timeout_s=args.timeout, memory_mb=DEFAULT_MEMORY_MB
+                jobs, quick=args.quick, timeout_s=args.timeout, memory_mb=DEFAULT_MEMORY_MB
             ) as pool:
                 for result in pool.run([files[i] for i, _ in todo], progress.update):
                     index, key = todo[result.index]

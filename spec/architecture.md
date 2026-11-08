@@ -137,8 +137,8 @@ The default for `--jobs` comes from `/proc/self/mountinfo` and `/sys/block/*/que
 | Storage | Default workers |
 | --- | --- |
 | SSD or NVMe | One per CPU core |
-| Spinning disk or network share | One or two |
-| Unknown | The conservative setting above |
+| Spinning disk or network share | Two (so decoding one file overlaps reading the next) |
+| Unknown | Two, as above |
 
 ### 4.7 Determinism
 
