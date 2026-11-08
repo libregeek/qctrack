@@ -34,6 +34,10 @@ from qctrack.native.vorbisfile import VorbisDecoder, VorbisError
 
 Block = npt.NDArray[np.float32]
 
+#: Raise this whenever a change to pass 1 or 2 (or to the measurement types) would give a
+#: different result for the same file, so cached measurements are not reused (REQ-NFR-15).
+ANALYSER_VERSION = 1
+
 
 @dataclass
 class Measured:

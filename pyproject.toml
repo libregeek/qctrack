@@ -10,7 +10,7 @@ readme = "README.md"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = ["numpy", "mutagen", "jinja2", "tqdm"]
+dependencies = ["numpy", "mutagen", "jinja2", "tqdm", "cattrs"]
 
 [project.optional-dependencies]
 spectrograms = ["pillow"]

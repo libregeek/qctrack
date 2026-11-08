@@ -15,7 +15,8 @@ from qctrack.cli.progress import Progress
 from qctrack.cli.style import RATING_STYLE, Painter, should_color
 from qctrack.cli.table import format_table
 from qctrack.cli.workers import DEFAULT_MEMORY_MB, DEFAULT_TIMEOUT_S, WorkerPool
-from qctrack.core.analyze import TrackReport, score_measured
+from qctrack.core.analyze import Measured, TrackReport, score_measured
+from qctrack.core.cache import CacheError, ResultCache, file_key
 from qctrack.core.detect import Detection
 from qctrack.core.mp3scan import Mp3Scan
 from qctrack.core.oggscan import OggScan
@@ -36,6 +37,7 @@ _FOLDER_CANDIDATE_EXTENSIONS = frozenset({".mp3", ".mp2", ".ogg", ".oga", ".opus
 
 
 EXIT_OK, EXIT_PROBLEMS, EXIT_USAGE, EXIT_FATAL, EXIT_BELOW = 0, 1, 2, 3, 4
+EXIT_INTERRUPTED = 130  # 128 + SIGINT, the shell convention
 
 
 def _score(text: str) -> float:
@@ -98,6 +100,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("auto", "always", "never"),
         default="auto",
         help="colour output; auto = on for a terminal unless NO_COLOR is set (default)",
+    )
+    scan.add_argument(
+        "--no-cache", action="store_true", help="ignore and do not update the result cache"
     )
     scan.add_argument("--profile", type=Path, help="scoring profile (default: user or bundled)")
     scan.add_argument("-v", "--verbose", action="store_true", help="show measurements")
@@ -371,6 +376,47 @@ def _print_details(report: TrackReport, paint: Painter) -> None:
     print()
 
 
+def _open_cache(disabled: bool) -> ResultCache | None:
+    if disabled:
+        return None
+    try:
+        return ResultCache()
+    except CacheError as e:
+        print(f"qctrack: warning: {e}; continuing without the cache", file=sys.stderr)
+        return None
+
+
+def _from_cache(
+    cache: ResultCache | None,
+    files: Sequence[Path],
+    quick: bool,
+    profile: Profile,
+    reports: dict[int, TrackReport],
+) -> list[tuple[int, tuple[str, int, int] | None]]:
+    """Fill ``reports`` from the cache; return the (file index, cache key) still to analyse."""
+    todo: list[tuple[int, tuple[str, int, int] | None]] = []
+    for i, path in enumerate(files):
+        hit = cache.get(path, quick) if cache is not None else None
+        if hit is not None:
+            reports[i] = score_measured(hit, profile)
+        else:
+            todo.append((i, file_key(path) if cache is not None else None))
+    return todo
+
+
+def _store(
+    cache: ResultCache, key: tuple[str, int, int], quick: bool, measured: Measured
+) -> ResultCache | None:
+    """Save one result. If the cache fails, say so once and carry on without it."""
+    try:
+        cache.put(key, quick, measured)
+    except CacheError as e:
+        print(f"qctrack: warning: {e}; continuing without the cache", file=sys.stderr)
+        cache.close()
+        return None
+    return cache
+
+
 def _scan(args: argparse.Namespace) -> int:
     try:
         profile = resolve_profile(args.profile)
@@ -379,20 +425,36 @@ def _scan(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     paint = Painter(should_color(args.color, sys.stdout))
     files = list(discover(args.paths, args.follow_links))
-    progress = Progress(len(files), sys.stderr)
     by_index: dict[int, TrackReport] = {}
+    cache = _open_cache(args.no_cache)
     try:
-        with WorkerPool(
-            args.jobs, quick=args.quick, timeout_s=args.timeout, memory_mb=DEFAULT_MEMORY_MB
-        ) as pool:
-            for result in pool.run(files, progress.update):
-                path = files[result.index]
-                if result.measured is None:
-                    by_index[result.index] = TrackReport(path, message=result.error)
-                else:
-                    by_index[result.index] = score_measured(result.measured, profile)
+        todo = _from_cache(cache, files, args.quick, profile, by_index)
+        progress = Progress(len(todo), sys.stderr)
+        try:
+            with WorkerPool(
+                args.jobs, quick=args.quick, timeout_s=args.timeout, memory_mb=DEFAULT_MEMORY_MB
+            ) as pool:
+                for result in pool.run([files[i] for i, _ in todo], progress.update):
+                    index, key = todo[result.index]
+                    if result.measured is None:
+                        by_index[index] = TrackReport(files[index], message=result.error)
+                        continue
+                    by_index[index] = score_measured(result.measured, profile)
+                    if cache is not None and key is not None:
+                        cache = _store(cache, key, args.quick, result.measured)
+        finally:
+            progress.done()
+    except KeyboardInterrupt:
+        # Every finished result is already committed; a rerun picks up from here.
+        print(
+            f"qctrack: interrupted after {len(by_index)} of {len(files)} file(s); "
+            "run the same command again to resume",
+            file=sys.stderr,
+        )
+        return EXIT_INTERRUPTED
     finally:
-        progress.done()
+        if cache is not None:
+            cache.close()
     reports = [by_index[i] for i in sorted(by_index)]  # discovery order
     if reports:
         _print_table(reports, paint)

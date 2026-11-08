@@ -125,7 +125,9 @@ There is no seccomp sandbox. It would add complexity for a tool that runs occasi
 - **Location:** an SQLite database at `$XDG_DATA_HOME/qctrack/cache.db`, never beside the audio (REQ-ACC-04). The standard `sqlite3` module provides it.
 - **Key:** path, size, modification time and analyser version (REQ-NFR-15).
 - **Value:** measurements only, never scores, so a profile change never invalidates the cache.
-- **Resume:** each result is committed as it arrives, so an interrupted scan restarts where it stopped. Ctrl-C finishes the write in progress and exits.
+- **Resume:** each result is committed as it arrives, so an interrupted scan restarts where it stopped. Ctrl-C stops the scan with exit code 130; a commit is one SQLite transaction, so it is either whole or absent.
+- **Mode:** quick (pass 1 only) and full results are separate rows, so `--quick` stays Provisional. Read errors are never cached. Unreadable cache files or rows are ignored with a warning, never fatal; `--no-cache` skips the cache. The row is keyed on the file's state *before* analysis, so a file that changes mid-scan is analysed again next time. `ANALYSER_VERSION` in `core/analyze.py` is raised whenever measurements change.
+- **Stored form:** zlib-compressed JSON, about 20 KB a track, mostly the averaged spectrum.
 - **Scale:** results go to SQLite and the reports stream from it in path order, so parent memory does not grow with library size (REQ-NFR-14).
 
 ### 4.6 Storage-aware parallelism
@@ -211,6 +213,7 @@ Versions are those in Fedora 44 on 2026-11-01. "Latest activity" is the most rec
 | Mutagen | `python3-mutagen` | 1.47.0 | GPL-2.0-or-later AND MIT | 2026-08-20 | Tags, encoder details, stream headers |
 | Jinja2 | `python3-jinja2` | 3.1.6 | BSD-3-Clause | 2025-06-14 | HTML templates with automatic escaping |
 | tqdm | `python3-tqdm` | 4.69.0 | MPL-2.0 AND MIT (per Fedora) | 2026-09-11 | Progress on standard error |
+| cattrs | `python3-cattrs` | 26.1.0 | MIT | Fedora build 2026-07-22; upstream commits not checked (no GitHub access here) | Measurements to and from JSON for the cache and `report.json`; `Path`, `Counter` and NumPy arrays have small registered hooks (`core/codec.py`) |
 | Pillow | `python3-pillow` | 12.3.0 | MIT | 2026-11-01 | Spectrogram images. Imported only with `--spectrograms`, and a weak RPM dependency so minimal installs can skip it. |
 
 **From the standard library:** `argparse`, `tomllib`, `csv`, `json`, `sqlite3`, `hashlib`, `multiprocessing`, `resource`, `ctypes`, `gettext`, `base64`, `html`.
