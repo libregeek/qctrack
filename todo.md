@@ -42,8 +42,8 @@ Run from source: `PYTHONPATH=src python3 -m qctrack ...`
   Test: `python3 -m pytest tests/test_decode_errors.py -s`: a truncated MP3 and a truncated Ogg report one error each; trailing ID3v1, APE and Lyrics3 tags (alone and combined) report 0; bursts of corruption are counted (MP3: broken frames and resyncs; Ogg: one hole per damaged page); all real samples report 0. Or by hand: truncate a copy of `sample.mp3` (`head -c 5000000 ~/Lab/samples/sample.mp3 > /tmp/t.mp3`) and run the `mp3_errors` helper from the test file on it. There is no CLI output for F2.06 yet (the pass-2 pipeline arrives in M4).
 
 ## M3 Scoring
-- [ ] **3.1 Default profile TOML + loader with line-numbered errors.**
-  Test: `profile show-default` prints it; a profile with a negative weight exits 2 naming file and line; a partial profile falls back to defaults.
+- [~] **3.1 Default profile TOML + loader with line-numbered errors.** `data/default-profile.toml` and `core/profile.py` (load, merge over default, validate, content hash). CLI: `profile show-default` and `profile validate FILE` (the latter is how you exercise the loader until `--profile` arrives in M4).
+  Test: `qctrack profile show-default` prints it; `python3 -m pytest tests/test_profile.py`; by hand, put `[factors]` and `"F1.01" = -1` in `/tmp/p.toml` and run `qctrack profile validate /tmp/p.toml`: exits 2 with `/tmp/p.toml:2:`; a file containing only `name = "mine"` validates and falls back to defaults. Loading `~/.config/qctrack/profile.toml` automatically (REQ-PRF-03) arrives with `--profile` in M4.
 - [ ] **3.2 Scoring, gates, ratings, coverage.**
   Test: the worked examples in requirements section 6.4 reproduce; unit tests pass.
 - [ ] **3.3 Rescore.**

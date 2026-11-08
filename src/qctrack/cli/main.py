@@ -12,6 +12,7 @@ from qctrack import __version__
 from qctrack.core.detect import Detection, Format, detect_file
 from qctrack.core.mp3scan import Mp3Scan, scan_mp3
 from qctrack.core.oggscan import OggScan, scan_ogg
+from qctrack.core.profile import ProfileError, default_profile_text, load_profile
 from qctrack.core.tags import StoredGain, TagInfo, lame_gains, read_tags
 
 # Used only to choose which files inside a folder are worth examining. The format of
@@ -33,6 +34,11 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument(
         "--follow-links", action="store_true", help="follow symbolic links to folders"
     )
+    profile = sub.add_parser("profile", help="scoring profiles")
+    psub = profile.add_subparsers(dest="profile_command", required=True)
+    psub.add_parser("show-default", help="print the default profile")
+    check = psub.add_parser("validate", help="check a profile file")
+    check.add_argument("file", type=Path, help="profile to check")
     return parser
 
 
@@ -189,10 +195,25 @@ def _scan(args: argparse.Namespace) -> int:
     return 1 if problems else 0
 
 
+def _profile(args: argparse.Namespace) -> int:
+    if args.profile_command == "show-default":
+        sys.stdout.write(default_profile_text())
+        return 0
+    try:
+        profile = load_profile(args.file)
+    except ProfileError as e:
+        print(f"qctrack: {e}", file=sys.stderr)
+        return 2
+    print(f"{args.file}: OK ({profile.label}, sha256 {profile.content_hash[:12]})")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "scan":
         return _scan(args)
+    if args.command == "profile":
+        return _profile(args)
     parser.print_usage(sys.stderr)
     return 2

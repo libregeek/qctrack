@@ -1,0 +1,72 @@
+# qctrack default scoring profile.
+# Copy it (`qctrack profile show-default > my-profile.toml`), edit it, then pass
+# `--profile my-profile.toml` or save it as ~/.config/qctrack/profile.toml.
+# A profile may override only some values; anything omitted falls back to this file.
+name = "default"
+version = "1.0"
+
+# Weight of each objective in the final score.
+[objectives]
+O1 = 25  # Metadata & encoding
+O2 = 30  # Technical integrity
+O3 = 45  # Authenticity & transcode
+
+# Relative weight of each factor within its objective. A weight of 0 means the factor is
+# reported but never changes the score.
+[factors]
+# O1 Metadata & encoding
+"F1.01" = 30  # Nominal & average bitrate
+"F1.02" = 0   # Info
+"F1.03" = 15  # Codec version & sample rate
+"F1.04" = 10  # Channel layout
+"F1.05" = 10  # Encoder identity & version
+"F1.06" = 20  # Encoder quality setting
+"F1.07" = 0   # Info
+"F1.08" = 10  # Declared vs counted length
+"F1.09" = 0   # Info
+"F1.10" = 5   # Real format detection
+"F1.11" = 0   # Info
+# O2 Technical integrity
+"F2.01" = 20  # Stream structure validity
+"F2.02" = 15  # Truncation
+"F2.03" = 5   # Unidentified data
+"F2.04" = 10  # Embedded audio checksum (FLAC)
+"F2.05" = 10  # Block-level CRC
+"F2.06" = 15  # Decode errors
+"F2.07" = 10  # Clipping
+"F2.08" = 3   # Peak & true peak
+"F2.09" = 0   # Integrated loudness (info, genre-dependent)
+"F2.10" = 4   # Dynamic range
+"F2.11" = 2   # DC offset
+"F2.12" = 6   # Channel anomalies
+"F2.13" = 3   # Silence & dropouts
+"F2.14" = 5   # Ogg stream layout
+# O3 Authenticity & transcode
+"F3.01" = 25  # Measured spectral cutoff
+"F3.02" = 30  # Claimed vs effective quality
+"F3.03" = 10  # Declared vs measured bandwidth
+"F3.04" = 10  # Cutoff sharpness
+"F3.05" = 10  # High-band holes & flicker
+"F3.06" = 10  # Upsampling detection
+"F3.07" = 0   # Experimental
+"F3.08" = 0   # View only
+"F3.10" = 15  # Fake bit depth
+
+[bitrate.mp3]
+# Average kbps = factor score for F1.01. Scores are interpolated between these points;
+# below the first point the score is that point's score, above the last it is that point's.
+anchors = { 64 = 0, 128 = 50, 160 = 75, 256 = 100 }
+
+# Caps on the final score, and the coverage below which the rating is marked Provisional.
+[gates]
+G2_cap = 39            # F2.01 or F2.02 Fail (desync or truncation)
+G3_cap = 39            # F2.04 Fail on FLAC (MD5 mismatch)
+G4_cap = 59            # F3.02 Fail (likely transcode or fake lossless)
+G5_min_coverage = 70   # percent
+
+# Lowest final score for each rating. F is everything below D.
+[ratings]
+A = 90
+B = 75
+C = 60
+D = 40
