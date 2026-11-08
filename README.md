@@ -57,6 +57,7 @@ When running from the source folder without installing, use `PYTHONPATH=src pyth
 | `--timeout SECONDS` | Time budget per file (default 300). A file that takes longer is reported as an Error. |
 | `-v, --verbose` / `--silent` | More or less terminal output. |
 | `--profile PATH` | Use your own scoring profile. |
+| `--color auto\|always\|never` | Colour the output. The default `auto` colours a terminal and stays plain when piped or when `NO_COLOR` is set. |
 | `--follow-links` | Follow symbolic links to folders (off by default). |
 | `--fail-below SCORE` | Exit with code 4 if any track scores below `SCORE`. Useful in scripts. |
 

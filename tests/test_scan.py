@@ -82,7 +82,8 @@ def test_scan_prints_an_aligned_table_and_a_summary(
     assert by_name["a.mp3"][end - 4 : end].strip().replace(".", "").isdigit()
     assert "Unsupported" in by_name["o.opus"] and "Notes" in header
     assert "Opus" in by_name["o.opus"]
-    assert lines[-1].startswith("6 files:") and "unsupported 2" in lines[-1]
+    assert lines[-2].startswith("6 files:") and "unsupported 2" in lines[-2]
+    assert lines[-1].startswith("Gates: G1 ")
 
 
 def test_scan_exit_code_is_zero_when_everything_is_analysed(
@@ -120,3 +121,30 @@ def test_user_profile_is_used_automatically(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     assert main(["scan", str(library / "a.mp3")]) == 2
     assert "unknown factor ID" in capsys.readouterr().err
+
+
+def test_legend_follows_the_summary_and_explains_only_the_gates_shown(
+    library: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    main(["scan", str(library)])  # has Unsupported files (G1) and a band-limited 320 (G4)
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[-2].startswith("6 files:")
+    legend = lines[-1]
+    assert legend.startswith("Gates: G1 format not supported yet, not scored; G4 ")
+    assert "capped at 59" in legend
+    assert "G2" not in legend and "G3" not in legend and "G5" not in legend
+
+
+def test_no_legend_when_no_gate_applies(library: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    main(["scan", str(library / "a.mp3")])
+    out = capsys.readouterr().out
+    assert "Gates:" not in out.splitlines()[-1] and out.splitlines()[-1].startswith("1 files:")
+
+
+def test_legend_uses_the_caps_of_the_active_profile(
+    library: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    custom = tmp_path / "p.toml"
+    custom.write_text("[gates]\nG4_cap = 45\n")
+    main(["scan", "--profile", str(custom), str(library / "fake.mp3")])
+    assert "capped at 45" in capsys.readouterr().out.splitlines()[-1]

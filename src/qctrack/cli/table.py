@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 _ELLIPSIS = "…"
 _GAP = "  "
@@ -25,12 +25,18 @@ def format_table(
     shrink: Sequence[int] = (),
     keep_end: Sequence[int] = (),
     max_width: int | None = None,
+    style: Callable[[int, int, str], str] | None = None,
+    rule_char: str = "-",
 ) -> list[str]:
     """Align ``rows`` under ``headers``.
 
     Columns in ``right`` are right-aligned. When ``max_width`` is given and the table is
     wider, the widest of the ``shrink`` columns is cut down (with an ellipsis, keeping the
     end of the text for columns in ``keep_end``) until it fits or they reach a minimum.
+
+    ``style(column, row, text)`` may add escape codes to a cell after it has been clipped;
+    widths and padding are always worked out on the plain text. ``row`` is -1 for the header
+    and the rule (whose column is -1).
     """
     widths = [max([len(h)] + [len(r[i]) for r in rows]) for i, h in enumerate(headers)]
     if max_width is not None:
@@ -40,12 +46,18 @@ def format_table(
                 break
             widths[max(candidates, key=widths.__getitem__)] -= 1
 
-    def line(cells: Sequence[str]) -> str:
+    def line(cells: Sequence[str], row: int) -> str:
         out = []
         for i, cell in enumerate(cells):
-            cell = _clip(cell, widths[i], i in keep_end)
-            out.append(cell.rjust(widths[i]) if i in right else cell.ljust(widths[i]))
+            plain = _clip(cell, widths[i], i in keep_end)
+            shown = style(i, row, plain) if style else plain
+            pad = " " * (widths[i] - len(plain))
+            out.append(pad + shown if i in right else shown + pad)
         return _GAP.join(out).rstrip()
 
-    rule = _GAP.join("-" * w for w in widths)
-    return [line(headers), rule, *(line(r) for r in rows)]
+    rule = _GAP.join(rule_char * w for w in widths)
+    return [
+        line(headers, -1),
+        style(-1, -1, rule) if style else rule,  # column -1 means the rule
+        *(line(r, n) for n, r in enumerate(rows)),
+    ]

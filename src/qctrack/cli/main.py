@@ -12,6 +12,7 @@ from pathlib import Path
 
 from qctrack import __version__
 from qctrack.cli.progress import Progress
+from qctrack.cli.style import RATING_STYLE, Painter, should_color
 from qctrack.cli.table import format_table
 from qctrack.cli.workers import DEFAULT_MEMORY_MB, DEFAULT_TIMEOUT_S, WorkerPool
 from qctrack.core.analyze import TrackReport, score_measured
@@ -19,12 +20,13 @@ from qctrack.core.detect import Detection
 from qctrack.core.mp3scan import Mp3Scan
 from qctrack.core.oggscan import OggScan
 from qctrack.core.profile import (
+    Profile,
     ProfileError,
     default_profile_text,
     load_profile,
     resolve_profile,
 )
-from qctrack.core.scoring import Status
+from qctrack.core.scoring import Status, gate_legend
 from qctrack.core.tags import StoredGain, TagInfo, lame_gains
 
 # Used only to choose which files inside a folder are worth examining. The format of
@@ -90,6 +92,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_TIMEOUT_S,
         metavar="SECONDS",
         help=f"time budget per file (default {DEFAULT_TIMEOUT_S:g}); a slower file is an Error",
+    )
+    scan.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default="auto",
+        help="colour output; auto = on for a terminal unless NO_COLOR is set (default)",
     )
     scan.add_argument("--profile", type=Path, help="scoring profile (default: user or bundled)")
     scan.add_argument("-v", "--verbose", action="store_true", help="show measurements")
@@ -227,53 +235,92 @@ def _tag_lines(t: TagInfo, lame_gain: list[StoredGain]) -> list[str]:
     return lines
 
 
-def _factor_lines(report: TrackReport) -> list[str]:
-    lines = ["factors:"]
+def _factor_lines(report: TrackReport, paint: Painter) -> list[str]:
+    lines = [paint("factors:", "bold")]
     for f in report.factors:
         score = f"{f.score:5.1f}" if f.score is not None else "  n/e"
-        verdict = f.verdict.value if f.verdict else "-"
-        lines.append(f"  {f.factor}  {score}  {verdict:<4}  {f.detail}")
+        name = f.verdict.value if f.verdict else "-"
+        verdict = paint.verdict(f"{name:<4}", name)
+        lines.append(f"  {paint(f.factor, 'dim')}  {score}  {verdict}  {f.detail}")
     s = report.score
     objs = ", ".join(f"{k} {v:.1f}" if v is not None else f"{k} -" for k, v in s.objectives.items())
     lines.append(f"objectives: {objs}; coverage {s.coverage_pct:.0f}%")
     return lines
 
 
-def _table_row(report: TrackReport) -> tuple[list[str], str]:
-    """Table cells (file, album, title, score, rating, gates) and a note for the Notes column."""
+def _table_row(report: TrackReport) -> tuple[list[str], str, str]:
+    """Table cells (file, album, title, score, rating, gates), a note for the Notes column,
+    and a tone (the rating letter, or ``error``/``unsupported``/``unscored``) for colour."""
     s = report.score
     tags = report.tags
     head = [str(report.path), tags.album, tags.title]
     if s.status is Status.ERROR:
-        return [*head, "-", "Error", ""], report.message
+        return [*head, "-", "Error", ""], report.message, "error"
     if s.status is Status.UNSUPPORTED:
         assert report.detection is not None
         note = describe(report.detection).removeprefix("Unsupported (").removesuffix(")")
-        return [*head, "-", "Unsupported", ";".join(s.gates)], note
+        return [*head, "-", "Unsupported", ";".join(s.gates)], note, "unsupported"
     if s.final_score is None or s.rating is None:
-        return [*head, "-", "Unscored", ""], ""
+        return [*head, "-", "Unscored", ""], "", "unscored"
     rating = s.rating + ("*" if s.status is Status.PROVISIONAL else "")
-    return [*head, f"{s.final_score:.1f}", rating, ";".join(s.gates)], ""
+    return [*head, f"{s.final_score:.1f}", rating, ";".join(s.gates)], "", s.rating
 
 
-def _print_table(reports: Sequence[TrackReport]) -> None:
-    rows, notes = zip(*(_table_row(r) for r in reports), strict=True)
+_FILE, _SCORE, _RATING, _GATES, _NOTES = 0, 3, 4, 5, 6
+
+
+def _print_table(reports: Sequence[TrackReport], paint: Painter) -> None:
+    rows, notes, tones = zip(*(_table_row(r) for r in reports), strict=True)
     headers = ["File", "Album", "Title", "Score", "Rating", "Gates"]
     table = [list(r) for r in rows]
     if any(notes):
         headers.append("Notes")
         table = [[*r, n] for r, n in zip(table, notes, strict=True)]
+    fancy = sys.stdout.isatty() and (sys.stdout.encoding or "").lower().replace("-", "") == "utf8"
+
+    def style(col: int, row: int, text: str) -> str:
+        if col == -1:
+            return paint(text, "dim")  # the rule under the header
+        if row == -1:
+            return paint(text, "bold")
+        tone = tones[row]
+        if col == _FILE:  # quiet folder, readable file name
+            folder, slash, name = text.rpartition("/")
+            return paint(folder + slash, "dim") + name
+        if col == _SCORE:
+            hue = [c for c in RATING_STYLE.get(tone, ()) if c != "bold"]
+            return paint(text, *hue)  # same hue as the rating, but the badge stays bolder
+        if col == _RATING:
+            if tone in RATING_STYLE:
+                return paint.rating(text, tone)
+            return paint(text, "red") if tone == "error" else paint(text, "cyan")
+        if col == _GATES:
+            return paint(text, "yellow")
+        if col == _NOTES:
+            return paint(text, "dim")
+        return text
+
     width = shutil.get_terminal_size().columns if sys.stdout.isatty() else None
     shrink = [i for i in (0, 1, 2, 6) if i < len(headers)]
     for line in format_table(
-        headers, table, right=[3], shrink=shrink, keep_end=[0], max_width=width
+        headers,
+        table,
+        right=[_SCORE],
+        shrink=shrink,
+        keep_end=[0],
+        max_width=width,
+        style=style,
+        rule_char="─" if fancy else "-",
     ):
         print(line)
     if any(r.score.status is Status.PROVISIONAL for r in reports):
-        print("* provisional: less than the required share of the weight was evaluated")
+        print(
+            paint("* provisional: less than the required share of the weight was evaluated", "dim")
+        )
 
 
-def _summary(reports: Sequence[TrackReport]) -> str:
+def _summary(reports: Sequence[TrackReport], paint: Painter | None = None) -> str:
+    paint = paint or Painter(False)
     ratings: Counter[str] = Counter()
     other: Counter[Status] = Counter()
     for r in reports:
@@ -281,15 +328,33 @@ def _summary(reports: Sequence[TrackReport]) -> str:
             ratings[r.score.rating] += 1
         if r.score.status in (Status.UNSUPPORTED, Status.ERROR, Status.UNSCORED):
             other[r.score.status] += 1
-    graded = ", ".join(f"{k} {ratings[k]}" for k in "ABCDF")
+
+    def count(letter: str) -> str:
+        text = f"{letter} {ratings[letter]}"
+        return paint.rating(text, letter) if ratings[letter] else paint(text, "dim")
+
+    graded = ", ".join(count(k) for k in "ABCDF")
     provisional = sum(1 for r in reports if r.score.status is Status.PROVISIONAL)
+    errors = other[Status.ERROR]
+    err_text = f"errors {errors}"
     return (
-        f"{len(reports)} files: {graded}; provisional {provisional}, "
-        f"unsupported {other[Status.UNSUPPORTED]}, errors {other[Status.ERROR]}"
+        f"{paint(f'{len(reports)} files:', 'bold')} {graded}; provisional {provisional}, "
+        f"unsupported {other[Status.UNSUPPORTED]}, "
+        f"{paint(err_text, 'red') if errors else err_text}"
     )
 
 
-def _print_details(report: TrackReport) -> None:
+def _legend(reports: Sequence[TrackReport], profile: Profile, paint: Painter) -> str | None:
+    """A line explaining the gates that appear in ``reports``; None when there are none."""
+    used = sorted({g for r in reports for g in r.score.gates})
+    if not used:
+        return None
+    meaning = gate_legend(profile)
+    items = "; ".join(f"{paint(g, 'yellow')} {meaning[g]}" for g in used)
+    return f"{paint('Gates:', 'bold')} {items}"
+
+
+def _print_details(report: TrackReport, paint: Painter) -> None:
     m = report.measurements
     if m is None:
         return
@@ -299,8 +364,8 @@ def _print_details(report: TrackReport) -> None:
     else:
         assert m.ogg is not None
         lines, lame_gain = _ogg_lines(m.ogg), []
-    lines += _tag_lines(report.tags, lame_gain) + _factor_lines(report)
-    print(report.path)
+    lines += _tag_lines(report.tags, lame_gain) + _factor_lines(report, paint)
+    print(paint(str(report.path), "bold"))
     for line in lines:
         print(f"    {line}")
     print()
@@ -312,6 +377,7 @@ def _scan(args: argparse.Namespace) -> int:
     except ProfileError as e:
         print(f"qctrack: {e}", file=sys.stderr)
         return EXIT_USAGE
+    paint = Painter(should_color(args.color, sys.stdout))
     files = list(discover(args.paths, args.follow_links))
     progress = Progress(len(files), sys.stderr)
     by_index: dict[int, TrackReport] = {}
@@ -329,12 +395,15 @@ def _scan(args: argparse.Namespace) -> int:
         progress.done()
     reports = [by_index[i] for i in sorted(by_index)]  # discovery order
     if reports:
-        _print_table(reports)
+        _print_table(reports, paint)
         print()
     if args.verbose:
         for report in reports:
-            _print_details(report)
-    print(_summary(reports))
+            _print_details(report, paint)
+    print(_summary(reports, paint))
+    legend = _legend(reports, profile, paint)
+    if legend:
+        print(legend)
     problems = any(r.score.status in (Status.UNSUPPORTED, Status.ERROR) for r in reports)
     if args.fail_below is not None:
         below = [

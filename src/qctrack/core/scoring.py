@@ -82,6 +82,18 @@ class TrackScore:
     coverage_pct: float
 
 
+def gate_legend(profile: Profile) -> dict[str, str]:
+    """One short line per gate, with the caps and limit of ``profile`` filled in."""
+    g = profile.gates
+    return {
+        "G1": "format not supported yet, not scored",
+        "G2": f"broken or truncated stream, capped at {g['G2_cap']:g}",
+        "G3": f"embedded checksum mismatch, capped at {g['G3_cap']:g}",
+        "G4": f"likely transcode or fake lossless, capped at {g['G4_cap']:g}",
+        "G5": f"under {g['G5_min_coverage']:g}% of the weight evaluated, rating provisional",
+    }
+
+
 def objective_of(factor: str) -> str:
     """``F2.06`` belongs to objective ``O2``."""
     return f"O{factor[1]}"
