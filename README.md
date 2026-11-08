@@ -54,6 +54,7 @@ When running from the source folder without installing, use `PYTHONPATH=src pyth
 | `--quick` | Fast header-only scan. Ratings are marked Provisional. |
 | `--spectrograms` | Embed spectrogram images in the HTML report (larger file). |
 | `-j, --jobs N` | Number of parallel workers (default: chosen to suit your storage). |
+| `--timeout SECONDS` | Time budget per file (default 300). A file that takes longer is reported as an Error. |
 | `-v, --verbose` / `--silent` | More or less terminal output. |
 | `--profile PATH` | Use your own scoring profile. |
 | `--follow-links` | Follow symbolic links to folders (off by default). |

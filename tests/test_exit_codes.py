@@ -66,7 +66,7 @@ def test_3_on_a_fatal_error(
     def boom(*args: object, **kwargs: object) -> None:
         raise RuntimeError("disk on fire")
 
-    monkeypatch.setattr(cli, "analyze_file", boom)
+    monkeypatch.setattr(cli, "score_measured", boom)
     assert main(["scan", str(good)]) == 3
     err = capsys.readouterr().err
     assert "fatal error" in err and "disk on fire" in err and "Traceback" not in err

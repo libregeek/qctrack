@@ -36,10 +36,23 @@ Block = npt.NDArray[np.float32]
 
 
 @dataclass
+class Measured:
+    """What pass 1 and 2 found for one file, before scoring. Plain data, so a worker
+    process can send it to the parent; scoring then happens in the parent (pass 3)."""
+
+    path: Path
+    detection: Detection | None = None
+    #: Why the file could not be read, when it could not.
+    error: str = ""
+    tags: TagInfo = field(default_factory=TagInfo)
+    measurements: TrackMeasurements | None = None
+
+
+@dataclass
 class TrackReport:
     path: Path
     detection: Detection | None = None
-    #: Why the file was not analysed (Error), or what format it was (Unsupported).
+    #: Why the file was not analysed (Error).
     message: str = ""
     tags: TagInfo = field(default_factory=TagInfo)
     measurements: TrackMeasurements | None = None
@@ -47,16 +60,15 @@ class TrackReport:
     score: TrackScore = field(default_factory=error_score)
 
 
-def analyze_file(path: Path, profile: Profile, quick: bool = False) -> TrackReport:
-    """Measure and score one file. Never raises for a bad file: it reports Error instead."""
-    report = TrackReport(path)
+def measure_file(path: Path, quick: bool = False) -> Measured:
+    """Passes 1 and 2 for one file. Never raises for a bad file: ``error`` is set instead."""
+    out = Measured(path)
     try:
-        report.detection = detect_file(path)
-        fmt = report.detection.format
-        if not report.detection.supported:
-            report.score = unsupported_score()
-            return report
-        report.tags = read_tags(path, fmt)
+        out.detection = detect_file(path)
+        fmt = out.detection.format
+        if not out.detection.supported:
+            return out
+        out.tags = read_tags(path, fmt)
         m = TrackMeasurements(fmt)
         if fmt is Format.MP3:
             m.mp3 = scan_mp3(path)
@@ -64,13 +76,30 @@ def analyze_file(path: Path, profile: Profile, quick: bool = False) -> TrackRepo
             m.ogg = scan_ogg(path)
         if not quick:
             _decode(path, m)
-        report.measurements = m
-        report.factors = factor_results(m, profile)
-        report.score = score_track(report.factors, profile)
+        out.measurements = m
     except OSError as e:
-        report.message = e.strerror or str(e)
+        out.error = e.strerror or str(e)
+    return out
+
+
+def score_measured(measured: Measured, profile: Profile) -> TrackReport:
+    """Pass 3: derived factors, gates and rating. A pure function of the measurements."""
+    report = TrackReport(
+        measured.path, measured.detection, measured.error, measured.tags, measured.measurements
+    )
+    if measured.error:
         report.score = error_score()
+    elif measured.measurements is None:
+        report.score = unsupported_score()
+    else:
+        report.factors = factor_results(measured.measurements, profile)
+        report.score = score_track(report.factors, profile)
     return report
+
+
+def analyze_file(path: Path, profile: Profile, quick: bool = False) -> TrackReport:
+    """Measure and score one file in this process."""
+    return score_measured(measure_file(path, quick), profile)
 
 
 class _Sinks:

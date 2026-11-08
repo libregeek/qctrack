@@ -13,7 +13,8 @@ from pathlib import Path
 from qctrack import __version__
 from qctrack.cli.progress import Progress
 from qctrack.cli.table import format_table
-from qctrack.core.analyze import TrackReport, analyze_file
+from qctrack.cli.workers import DEFAULT_MEMORY_MB, DEFAULT_TIMEOUT_S, WorkerPool
+from qctrack.core.analyze import TrackReport, score_measured
 from qctrack.core.detect import Detection
 from qctrack.core.mp3scan import Mp3Scan
 from qctrack.core.oggscan import OggScan
@@ -45,6 +46,26 @@ def _score(text: str) -> float:
     return value
 
 
+def _positive_int(text: str) -> int:
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a whole number") from None
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return value
+
+
+def _positive_float(text: str) -> float:
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number") from None
+    if value <= 0:
+        raise argparse.ArgumentTypeError("must be above 0")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="qctrack", description="Audio quality scoring and fake-bitrate detection."
@@ -59,6 +80,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=_score,
         metavar="SCORE",
         help="exit with code 4 if any track scores below SCORE (0-100)",
+    )
+    scan.add_argument(
+        "-j", "--jobs", type=_positive_int, default=1, metavar="N", help="parallel workers"
+    )
+    scan.add_argument(
+        "--timeout",
+        type=_positive_float,
+        default=DEFAULT_TIMEOUT_S,
+        metavar="SECONDS",
+        help=f"time budget per file (default {DEFAULT_TIMEOUT_S:g}); a slower file is an Error",
     )
     scan.add_argument("--profile", type=Path, help="scoring profile (default: user or bundled)")
     scan.add_argument("-v", "--verbose", action="store_true", help="show measurements")
@@ -283,13 +314,20 @@ def _scan(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     files = list(discover(args.paths, args.follow_links))
     progress = Progress(len(files), sys.stderr)
-    reports: list[TrackReport] = []
+    by_index: dict[int, TrackReport] = {}
     try:
-        for number, path in enumerate(files, start=1):
-            progress.update(number, path)
-            reports.append(analyze_file(path, profile, quick=args.quick))
+        with WorkerPool(
+            args.jobs, quick=args.quick, timeout_s=args.timeout, memory_mb=DEFAULT_MEMORY_MB
+        ) as pool:
+            for result in pool.run(files, progress.update):
+                path = files[result.index]
+                if result.measured is None:
+                    by_index[result.index] = TrackReport(path, message=result.error)
+                else:
+                    by_index[result.index] = score_measured(result.measured, profile)
     finally:
         progress.done()
+    reports = [by_index[i] for i in sorted(by_index)]  # discovery order
     if reports:
         _print_table(reports)
         print()
