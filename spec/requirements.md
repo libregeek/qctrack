@@ -315,7 +315,7 @@ The report is one row per track with identity columns, factor scores, objective 
 - **REQ-HTM-05** Spectrogram thumbnails are embedded only with `--spectrograms` (REQ-CLI-11), to keep file size small by default.
 - **REQ-HTM-06** The report stays usable for 10 000 tracks: under 20 MB without spectrograms, with responsive sorting and filtering.
 - **REQ-HTM-07** All text from tags and file names is escaped, so tag contents cannot inject markup or scripts.
-- **REQ-HTM-08** The page prints legibly and follows the viewer's light or dark system theme.
+- **REQ-HTM-08** The page uses a single light theme (no dark theme) and prints legibly.
 
 ### 6.2 CSV export
 
