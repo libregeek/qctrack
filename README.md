@@ -105,7 +105,7 @@ qctrack rescore --profile my-weights.toml --html --csv    # reads report.json
 | 1 | Some files were Error or Unsupported. |
 | 2 | Usage or profile error. |
 | 3 | Fatal error, such as an unwritable output folder. |
-| 4 | A track scored below `--fail-below`. |
+| 4 | A track scored below `--fail-below`. This takes precedence over code 1. |
 
 ## Development
 

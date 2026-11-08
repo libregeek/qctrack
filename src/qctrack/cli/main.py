@@ -32,6 +32,19 @@ from qctrack.core.tags import StoredGain, TagInfo, lame_gains
 _FOLDER_CANDIDATE_EXTENSIONS = frozenset({".mp3", ".mp2", ".ogg", ".oga", ".opus", ".spx", ".flac"})
 
 
+EXIT_OK, EXIT_PROBLEMS, EXIT_USAGE, EXIT_FATAL, EXIT_BELOW = 0, 1, 2, 3, 4
+
+
+def _score(text: str) -> float:
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number") from None
+    if not 0 <= value <= 100:
+        raise argparse.ArgumentTypeError(f"{text} is outside 0-100")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="qctrack", description="Audio quality scoring and fake-bitrate detection."
@@ -41,6 +54,12 @@ def build_parser() -> argparse.ArgumentParser:
     scan = sub.add_parser("scan", help="analyse files and folders")
     scan.add_argument("paths", nargs="+", type=Path, help="files and folders (recursive)")
     scan.add_argument("--quick", action="store_true", help="header-only scan (pass 1)")
+    scan.add_argument(
+        "--fail-below",
+        type=_score,
+        metavar="SCORE",
+        help="exit with code 4 if any track scores below SCORE (0-100)",
+    )
     scan.add_argument("--profile", type=Path, help="scoring profile (default: user or bundled)")
     scan.add_argument("-v", "--verbose", action="store_true", help="show measurements")
     scan.add_argument(
@@ -261,7 +280,7 @@ def _scan(args: argparse.Namespace) -> int:
         profile = resolve_profile(args.profile)
     except ProfileError as e:
         print(f"qctrack: {e}", file=sys.stderr)
-        return 2
+        return EXIT_USAGE
     files = list(discover(args.paths, args.follow_links))
     progress = Progress(len(files), sys.stderr)
     reports: list[TrackReport] = []
@@ -279,7 +298,20 @@ def _scan(args: argparse.Namespace) -> int:
             _print_details(report)
     print(_summary(reports))
     problems = any(r.score.status in (Status.UNSUPPORTED, Status.ERROR) for r in reports)
-    return 1 if problems else 0
+    if args.fail_below is not None:
+        below = [
+            r
+            for r in reports
+            if r.score.final_score is not None and r.score.final_score < args.fail_below
+        ]
+        if below:
+            # Takes precedence over code 1: the caller asked for this check by name.
+            print(
+                f"qctrack: {len(below)} track(s) scored below {args.fail_below:g}",
+                file=sys.stderr,
+            )
+            return EXIT_BELOW
+    return EXIT_PROBLEMS if problems else EXIT_OK
 
 
 def _profile(args: argparse.Namespace) -> int:
@@ -290,17 +322,25 @@ def _profile(args: argparse.Namespace) -> int:
         profile = load_profile(args.file)
     except ProfileError as e:
         print(f"qctrack: {e}", file=sys.stderr)
-        return 2
+        return EXIT_USAGE
     print(f"{args.file}: OK ({profile.label}, sha256 {profile.content_hash[:12]})")
     return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
-    if args.command == "scan":
-        return _scan(args)
-    if args.command == "profile":
-        return _profile(args)
+    args = parser.parse_args(argv)  # a usage error exits with code 2
+    try:
+        if args.command == "scan":
+            return _scan(args)
+        if args.command == "profile":
+            return _profile(args)
+    except BrokenPipeError:
+        # The reader went away (``| head``). Keep Python from complaining again at exit.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return EXIT_FATAL
+    except Exception as e:  # last resort: report, do not dump a traceback
+        print(f"qctrack: fatal error: {type(e).__name__}: {e}", file=sys.stderr)
+        return EXIT_FATAL
     parser.print_usage(sys.stderr)
-    return 2
+    return EXIT_USAGE
