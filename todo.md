@@ -44,8 +44,8 @@ Run from source: `PYTHONPATH=src python3 -m qctrack ...`
 ## M3 Scoring
 - [~] **3.1 Default profile TOML + loader with line-numbered errors.** `data/default-profile.toml` and `core/profile.py` (load, merge over default, validate, content hash). CLI: `profile show-default` and `profile validate FILE` (the latter is how you exercise the loader until `--profile` arrives in M4).
   Test: `qctrack profile show-default` prints it; `python3 -m pytest tests/test_profile.py`; by hand, put `[factors]` and `"F1.01" = -1` in `/tmp/p.toml` and run `qctrack profile validate /tmp/p.toml`: exits 2 with `/tmp/p.toml:2:`; a file containing only `name = "mine"` validates and falls back to defaults. Loading `~/.config/qctrack/profile.toml` automatically (REQ-PRF-03) arrives with `--profile` in M4.
-- [ ] **3.2 Scoring, gates, ratings, coverage.**
-  Test: the worked examples in requirements section 6.4 reproduce; unit tests pass.
+- [~] **3.2 Scoring, gates, ratings, coverage.** `core/scoring.py`: `score_track` (objective and final scores, gates G2-G5, rating, coverage), `unsupported_score` (G1), plus `score_verdict` and `score_piecewise` for REQ-SCR-01/02/05. It combines factor scores only; turning each measurement into a factor score (per-factor thresholds) is not built yet.
+  Test: `python3 -m pytest tests/test_scoring.py -v`: the three 6.4 sample rows reproduce (95.9 A; 57.4 D with G4; Unsupported with G1).
 - [ ] **3.3 Rescore.**
   Test: `scan --json`, then `rescore --profile other.toml` gives new scores with no audio access (works after temporarily renaming the sample).
 
