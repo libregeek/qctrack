@@ -11,6 +11,13 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 from qctrack import __version__
+from qctrack.cli.outputs import (
+    check_options,
+    output_options,
+    report_path,
+    screen_off,
+    write_reports,
+)
 from qctrack.cli.progress import Progress
 from qctrack.cli.style import RATING_STYLE, Painter, should_color
 from qctrack.cli.table import format_table
@@ -31,7 +38,8 @@ from qctrack.core.scoring import Status, gate_legend
 from qctrack.core.storage import classify, default_jobs
 from qctrack.core.storage import describe as describe_storage
 from qctrack.core.tags import StoredGain, TagInfo, lame_gains
-from qctrack.report.csv_report import now_iso, write_csv
+from qctrack.report.csv_report import now_iso
+from qctrack.report.json_report import ReportFileError, read_json
 
 # Used only to choose which files inside a folder are worth examining. The format of
 # a file is always decided from its content (REQ-FMT-04). Files named on the command
@@ -41,16 +49,6 @@ _FOLDER_CANDIDATE_EXTENSIONS = frozenset({".mp3", ".mp2", ".ogg", ".oga", ".opus
 
 EXIT_OK, EXIT_PROBLEMS, EXIT_USAGE, EXIT_FATAL, EXIT_BELOW = 0, 1, 2, 3, 4
 EXIT_INTERRUPTED = 130  # 128 + SIGINT, the shell convention
-
-
-def _score(text: str) -> float:
-    try:
-        value = float(text)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"{text!r} is not a number") from None
-    if not 0 <= value <= 100:
-        raise argparse.ArgumentTypeError(f"{text} is outside 0-100")
-    return value
 
 
 def _positive_int(text: str) -> int:
@@ -79,15 +77,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"qctrack {__version__}")
     sub = parser.add_subparsers(dest="command")
-    scan = sub.add_parser("scan", help="analyse files and folders")
+    common = output_options()
+    scan = sub.add_parser("scan", parents=[common], help="analyse files and folders")
     scan.add_argument("paths", nargs="+", type=Path, help="files and folders (recursive)")
     scan.add_argument("--quick", action="store_true", help="header-only scan (pass 1)")
-    scan.add_argument(
-        "--fail-below",
-        type=_score,
-        metavar="SCORE",
-        help="exit with code 4 if any track scores below SCORE (0-100)",
-    )
     scan.add_argument(
         "-j",
         "--jobs",
@@ -104,44 +97,21 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"time budget per file (default {DEFAULT_TIMEOUT_S:g}); a slower file is an Error",
     )
     scan.add_argument(
-        "--color",
-        choices=("auto", "always", "never"),
-        default="auto",
-        help="colour output; auto = on for a terminal unless NO_COLOR is set (default)",
-    )
-    scan.add_argument(
         "--no-cache", action="store_true", help="ignore and do not update the result cache"
     )
     scan.add_argument(
-        "--csv",
-        nargs="?",
-        const="",
-        metavar="FILE",
-        help="also write a CSV report (default report.csv); --csv=- writes it to standard "
-        "output and turns the screen output off",
-    )
-    scan.add_argument(
-        "--csv-values",
-        action="store_true",
-        help="add a measured-value column next to each factor score in the CSV",
-    )
-    scan.add_argument(
-        "--csv-bom", action="store_true", help="start the CSV file with a UTF-8 byte-order mark"
-    )
-    scan.add_argument(
-        "-o",
-        "--output-dir",
-        type=Path,
-        metavar="DIR",
-        help="folder for report files with default names (default: current folder)",
-    )
-    scan.add_argument(
-        "--silent", action="store_true", help="no results or progress on the terminal"
-    )
-    scan.add_argument("--profile", type=Path, help="scoring profile (default: user or bundled)")
-    scan.add_argument("-v", "--verbose", action="store_true", help="show measurements")
-    scan.add_argument(
         "--follow-links", action="store_true", help="follow symbolic links to folders"
+    )
+    rescore = sub.add_parser(
+        "rescore",
+        parents=[common],
+        help="score a saved report.json again with another profile, without the audio",
+    )
+    rescore.add_argument(
+        "file",
+        nargs="?",
+        type=Path,
+        help="report.json to read (default: report.json in the output folder)",
     )
     profile = sub.add_parser("profile", help="scoring profiles")
     psub = profile.add_subparsers(dest="profile_command", required=True)
@@ -477,36 +447,16 @@ def _print_screen(
         print(legend)
 
 
-def _report_path(arg: str, default_name: str, output_dir: Path | None) -> Path:
-    """A custom name is used as given; the default name goes in the output folder."""
-    return Path(arg) if arg else (output_dir or Path()) / default_name
-
-
-def _write_reports(
-    args: argparse.Namespace, reports: Sequence[TrackReport], profile: Profile
-) -> None:
-    if args.csv is None:
-        return
-    stamp = now_iso()
-    if args.csv == "-":
-        if args.csv_bom:
-            sys.stdout.write("\ufeff")
-        write_csv(sys.stdout, reports, profile, values=args.csv_values, analyzed_at=stamp)
-        return
-    if args.output_dir and not args.csv:
-        args.output_dir.mkdir(parents=True, exist_ok=True)
-    path = _report_path(args.csv, "report.csv", args.output_dir)
-    with open(path, "w", encoding="utf-8-sig" if args.csv_bom else "utf-8", newline="") as f:
-        write_csv(f, reports, profile, values=args.csv_values, analyzed_at=stamp)
-
-
 def _scan(args: argparse.Namespace) -> int:
+    problem = check_options(args)
+    if problem:
+        print(f"qctrack: {problem}", file=sys.stderr)
+        return EXIT_USAGE
     try:
         profile = resolve_profile(args.profile)
     except ProfileError as e:
         print(f"qctrack: {e}", file=sys.stderr)
         return EXIT_USAGE
-    paint = Painter(should_color(args.color, sys.stdout))
     files = list(discover(args.paths, args.follow_links))
     by_index: dict[int, TrackReport] = {}
     jobs = args.jobs
@@ -526,12 +476,10 @@ def _scan(args: argparse.Namespace) -> int:
             ) as pool:
                 for result in pool.run([files[i] for i, _ in todo], progress.update):
                     index, key = todo[result.index]
-                    if result.measured is None:
-                        by_index[index] = TrackReport(files[index], message=result.error)
-                        continue
-                    by_index[index] = score_measured(result.measured, profile)
-                    if cache is not None and key is not None:
-                        cache = _store(cache, key, args.quick, result.measured)
+                    measured = result.measured or Measured(files[index], error=result.error)
+                    by_index[index] = score_measured(measured, profile)
+                    if cache is not None and key is not None and result.measured is not None:
+                        cache = _store(cache, key, args.quick, measured)
         finally:
             progress.done()
     except KeyboardInterrupt:
@@ -546,14 +494,26 @@ def _scan(args: argparse.Namespace) -> int:
         if cache is not None:
             cache.close()
     reports = [by_index[i] for i in sorted(by_index)]  # discovery order
-    if not (args.silent or args.csv == "-"):
+    return _finish(args, reports, profile, analyzed_at=now_iso(), quick=args.quick)
+
+
+def _finish(
+    args: argparse.Namespace,
+    reports: Sequence[TrackReport],
+    profile: Profile,
+    *,
+    analyzed_at: str,
+    quick: bool,
+) -> int:
+    """Screen output, report files and the exit code, for ``scan`` and ``rescore``."""
+    paint = Painter(should_color(args.color, sys.stdout))
+    if not screen_off(args):
         _print_screen(reports, profile, paint, args.verbose)
     try:
-        _write_reports(args, reports, profile)
+        write_reports(args, reports, profile, analyzed_at=analyzed_at, quick=quick)
     except OSError as e:
-        print(
-            f"qctrack: cannot write report: {e.filename or ''} {e.strerror or e}", file=sys.stderr
-        )
+        where = f"{e.filename}: " if e.filename else ""
+        print(f"qctrack: cannot write report: {where}{e.strerror or e}", file=sys.stderr)
         return EXIT_FATAL
     problems = any(r.score.status in (Status.UNSUPPORTED, Status.ERROR) for r in reports)
     if args.fail_below is not None:
@@ -570,6 +530,26 @@ def _scan(args: argparse.Namespace) -> int:
             )
             return EXIT_BELOW
     return EXIT_PROBLEMS if problems else EXIT_OK
+
+
+def _rescore(args: argparse.Namespace) -> int:
+    problem = check_options(args)
+    if problem:
+        print(f"qctrack: {problem}", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        profile = resolve_profile(args.profile)
+    except ProfileError as e:
+        print(f"qctrack: {e}", file=sys.stderr)
+        return EXIT_USAGE
+    source = args.file or report_path("", "report.json", args.output_dir)
+    try:
+        saved = read_json(source)
+    except ReportFileError as e:
+        print(f"qctrack: {e}", file=sys.stderr)
+        return EXIT_USAGE
+    reports = [score_measured(m, profile) for m in saved.tracks]
+    return _finish(args, reports, profile, analyzed_at=saved.analyzed_at, quick=saved.quick)
 
 
 def _profile(args: argparse.Namespace) -> int:
@@ -591,6 +571,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "scan":
             return _scan(args)
+        if args.command == "rescore":
+            return _rescore(args)
         if args.command == "profile":
             return _profile(args)
     except BrokenPipeError:

@@ -66,6 +66,12 @@ class TrackReport:
     factors: list[FactorResult] = field(default_factory=list)
     score: TrackScore = field(default_factory=error_score)
 
+    def to_measured(self) -> Measured:
+        """The measurements this report was scored from, so it can be scored again."""
+        return Measured(
+            self.path, self.detection, self.message, self.tags, self.measurements, self.size
+        )
+
 
 def measure_file(path: Path, quick: bool = False) -> Measured:
     """Passes 1 and 2 for one file. Never raises for a bad file: ``error`` is set instead."""
