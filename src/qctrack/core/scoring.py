@@ -65,6 +65,7 @@ class Status(enum.Enum):
     PROVISIONAL = "Provisional"  # graded, but coverage is below the G5 minimum
     UNSUPPORTED = "Unsupported"  # gate G1
     UNSCORED = "Unscored"  # supported, but no weighted factor was evaluated
+    ERROR = "Error"  # the file could not be analysed
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,11 @@ def rating_for(score: float, profile: Profile) -> str:
 def unsupported_score() -> TrackScore:
     """Gate G1: the real format is not supported in this release; nothing is scored."""
     return TrackScore(Status.UNSUPPORTED, {o: None for o in OBJECTIVES}, None, None, ("G1",), 0.0)
+
+
+def error_score() -> TrackScore:
+    """The file could not be read or analysed; nothing is scored."""
+    return TrackScore(Status.ERROR, {o: None for o in OBJECTIVES}, None, None, (), 0.0)
 
 
 def score_track(results: Iterable[FactorResult], profile: Profile) -> TrackScore:

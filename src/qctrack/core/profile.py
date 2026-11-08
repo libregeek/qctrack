@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import tomllib
 from collections.abc import Mapping
@@ -339,3 +340,17 @@ def load_profile(path: Path) -> Profile:
     merged = _merge(base, user)
     _check_merged(source, text, merged)
     return _build(merged)
+
+
+def user_profile_path() -> Path:
+    """``$XDG_CONFIG_HOME/qctrack/profile.toml`` (default ``~/.config/...``), REQ-PRF-03."""
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "qctrack" / "profile.toml"
+
+
+def resolve_profile(explicit: Path | None = None) -> Profile:
+    """The profile for a run: ``--profile`` if given, else the user's, else the default."""
+    if explicit is not None:
+        return load_profile(explicit)
+    user = user_profile_path()
+    return load_profile(user) if user.is_file() else load_default()

@@ -138,4 +138,6 @@ def test_cli_renamed_copy(tmp_path: Path) -> None:
         env={"PYTHONPATH": "src", "PATH": ""},
     )
     assert out.returncode == 0
-    assert out.stdout.strip().endswith("MP3")
+    # Detected as MP3 by content, so it is analysed (provisional, being a quick scan).
+    assert "unsupported 0, errors 0" in out.stdout
+    assert "provisional 1" in out.stdout

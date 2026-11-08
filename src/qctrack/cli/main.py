@@ -4,16 +4,27 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import sys
+from collections import Counter
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 from qctrack import __version__
-from qctrack.core.detect import Detection, Format, detect_file
-from qctrack.core.mp3scan import Mp3Scan, scan_mp3
-from qctrack.core.oggscan import OggScan, scan_ogg
-from qctrack.core.profile import ProfileError, default_profile_text, load_profile
-from qctrack.core.tags import StoredGain, TagInfo, lame_gains, read_tags
+from qctrack.cli.progress import Progress
+from qctrack.cli.table import format_table
+from qctrack.core.analyze import TrackReport, analyze_file
+from qctrack.core.detect import Detection
+from qctrack.core.mp3scan import Mp3Scan
+from qctrack.core.oggscan import OggScan
+from qctrack.core.profile import (
+    ProfileError,
+    default_profile_text,
+    load_profile,
+    resolve_profile,
+)
+from qctrack.core.scoring import Status
+from qctrack.core.tags import StoredGain, TagInfo, lame_gains
 
 # Used only to choose which files inside a folder are worth examining. The format of
 # a file is always decided from its content (REQ-FMT-04). Files named on the command
@@ -30,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan = sub.add_parser("scan", help="analyse files and folders")
     scan.add_argument("paths", nargs="+", type=Path, help="files and folders (recursive)")
     scan.add_argument("--quick", action="store_true", help="header-only scan (pass 1)")
+    scan.add_argument("--profile", type=Path, help="scoring profile (default: user or bundled)")
     scan.add_argument("-v", "--verbose", action="store_true", help="show measurements")
     scan.add_argument(
         "--follow-links", action="store_true", help="follow symbolic links to folders"
@@ -165,33 +177,108 @@ def _tag_lines(t: TagInfo, lame_gain: list[StoredGain]) -> list[str]:
     return lines
 
 
+def _factor_lines(report: TrackReport) -> list[str]:
+    lines = ["factors:"]
+    for f in report.factors:
+        score = f"{f.score:5.1f}" if f.score is not None else "  n/e"
+        verdict = f.verdict.value if f.verdict else "-"
+        lines.append(f"  {f.factor}  {score}  {verdict:<4}  {f.detail}")
+    s = report.score
+    objs = ", ".join(f"{k} {v:.1f}" if v is not None else f"{k} -" for k, v in s.objectives.items())
+    lines.append(f"objectives: {objs}; coverage {s.coverage_pct:.0f}%")
+    return lines
+
+
+def _table_row(report: TrackReport) -> tuple[list[str], str]:
+    """Table cells (file, album, title, score, rating, gates) and a note for the Notes column."""
+    s = report.score
+    tags = report.tags
+    head = [str(report.path), tags.album, tags.title]
+    if s.status is Status.ERROR:
+        return [*head, "-", "Error", ""], report.message
+    if s.status is Status.UNSUPPORTED:
+        assert report.detection is not None
+        note = describe(report.detection).removeprefix("Unsupported (").removesuffix(")")
+        return [*head, "-", "Unsupported", ";".join(s.gates)], note
+    if s.final_score is None or s.rating is None:
+        return [*head, "-", "Unscored", ""], ""
+    rating = s.rating + ("*" if s.status is Status.PROVISIONAL else "")
+    return [*head, f"{s.final_score:.1f}", rating, ";".join(s.gates)], ""
+
+
+def _print_table(reports: Sequence[TrackReport]) -> None:
+    rows, notes = zip(*(_table_row(r) for r in reports), strict=True)
+    headers = ["File", "Album", "Title", "Score", "Rating", "Gates"]
+    table = [list(r) for r in rows]
+    if any(notes):
+        headers.append("Notes")
+        table = [[*r, n] for r, n in zip(table, notes, strict=True)]
+    width = shutil.get_terminal_size().columns if sys.stdout.isatty() else None
+    shrink = [i for i in (0, 1, 2, 6) if i < len(headers)]
+    for line in format_table(
+        headers, table, right=[3], shrink=shrink, keep_end=[0], max_width=width
+    ):
+        print(line)
+    if any(r.score.status is Status.PROVISIONAL for r in reports):
+        print("* provisional: less than the required share of the weight was evaluated")
+
+
+def _summary(reports: Sequence[TrackReport]) -> str:
+    ratings: Counter[str] = Counter()
+    other: Counter[Status] = Counter()
+    for r in reports:
+        if r.score.rating:
+            ratings[r.score.rating] += 1
+        if r.score.status in (Status.UNSUPPORTED, Status.ERROR, Status.UNSCORED):
+            other[r.score.status] += 1
+    graded = ", ".join(f"{k} {ratings[k]}" for k in "ABCDF")
+    provisional = sum(1 for r in reports if r.score.status is Status.PROVISIONAL)
+    return (
+        f"{len(reports)} files: {graded}; provisional {provisional}, "
+        f"unsupported {other[Status.UNSUPPORTED]}, errors {other[Status.ERROR]}"
+    )
+
+
+def _print_details(report: TrackReport) -> None:
+    m = report.measurements
+    if m is None:
+        return
+    if m.mp3 is not None:
+        lines = _mp3_lines(m.mp3)
+        lame_gain = lame_gains(m.mp3.lame) if m.mp3.lame else []
+    else:
+        assert m.ogg is not None
+        lines, lame_gain = _ogg_lines(m.ogg), []
+    lines += _tag_lines(report.tags, lame_gain) + _factor_lines(report)
+    print(report.path)
+    for line in lines:
+        print(f"    {line}")
+    print()
+
+
 def _scan(args: argparse.Namespace) -> int:
-    problems = 0
-    for path in discover(args.paths, args.follow_links):
-        try:
-            d = detect_file(path)
-        except OSError as e:
-            print(f"{path}\tError ({e.strerror})")
-            problems += 1
-            continue
-        print(f"{path}\t{describe(d)}")
-        if args.verbose and d.format in (Format.MP3, Format.VORBIS):
-            try:
-                lame_gain: list[StoredGain] = []
-                if d.format is Format.MP3:
-                    mp3 = scan_mp3(path)
-                    lines = _mp3_lines(mp3)
-                    lame_gain = lame_gains(mp3.lame) if mp3.lame else []
-                else:
-                    lines = _ogg_lines(scan_ogg(path))
-                lines += _tag_lines(read_tags(path, d.format), lame_gain)
-                for line in lines:
-                    print(f"    {line}")
-            except OSError as e:
-                print(f"    Error ({e.strerror})")
-                problems += 1
-        if not d.supported:
-            problems += 1
+    try:
+        profile = resolve_profile(args.profile)
+    except ProfileError as e:
+        print(f"qctrack: {e}", file=sys.stderr)
+        return 2
+    files = list(discover(args.paths, args.follow_links))
+    progress = Progress(len(files), sys.stderr)
+    reports: list[TrackReport] = []
+    try:
+        for number, path in enumerate(files, start=1):
+            progress.update(number, path)
+            reports.append(analyze_file(path, profile, quick=args.quick))
+    finally:
+        progress.done()
+    if reports:
+        _print_table(reports)
+        print()
+    if args.verbose:
+        for report in reports:
+            _print_details(report)
+    print(_summary(reports))
+    problems = any(r.score.status in (Status.UNSUPPORTED, Status.ERROR) for r in reports)
     return 1 if problems else 0
 
 
