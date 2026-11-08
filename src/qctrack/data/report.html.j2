@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<title>qctrack report</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface: #fcfcfb; --panel: #f3f2ef; --line: #dcdad4;
+  --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #75736d;
+  --series: #2a78d6; --focus: #2a78d6;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px 16px 48px; background: var(--surface); color: var(--ink);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 28px 0 10px; }
+.meta { color: var(--ink-2); font-size: 13px; }
+.meta span + span::before { content: "\00b7"; margin: 0 8px; }
+code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.tiles { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.tile { background: var(--panel); border-radius: 8px; padding: 10px 14px; min-width: 96px; }
+.tile b { display: block; font-size: 24px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.tile span { color: var(--ink-2); font-size: 13px; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-weight: 600;
+  font-size: 13px; white-space: nowrap; }
+.r-A { background: #dff3e3; color: #0b5d1e; } .r-B { background: #e8f3d9; color: #3d5f0f; }
+.r-C { background: #fdf0c8; color: #6b4e00; } .r-D { background: #fde0d0; color: #8a3a0a; }
+.r-F { background: #fbd9d9; color: #8c1d1d; }
+.r-unsupported { background: #e3e7f2; color: #3a4261; } .r-error { background: #fbd9d9; color: #8c1d1d; }
+.hist { display: block; width: 100%; max-width: 520px; height: auto; }
+.hist .bar { fill: var(--series); }
+.hist text { fill: var(--ink-2); font-size: 11px; text-anchor: middle; }
+.hist .count { fill: var(--ink); font-weight: 600; }
+.hist .axis { stroke: var(--line); stroke-width: 1; }
+details.alt summary { cursor: pointer; color: var(--ink-2); font-size: 13px; margin-top: 4px; }
+.legend { color: var(--ink-2); font-size: 13px; margin: 8px 0 0; padding-left: 18px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0 12px; }
+.controls input, .controls select { font: inherit; padding: 6px 8px; border: 1px solid var(--line);
+  border-radius: 6px; background: #fff; color: var(--ink); }
+.controls input { flex: 1 1 240px; min-width: 0; }
+#count { color: var(--ink-2); font-size: 13px; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 7px 10px; vertical-align: top; border-bottom: 1px solid var(--line); }
+thead th { background: var(--panel); position: sticky; top: 0; white-space: nowrap; }
+th button { all: unset; cursor: pointer; font-weight: 600; }
+th button:focus-visible, .toggle:focus-visible, .controls *:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+th[aria-sort="ascending"] button::after { content: " \25b2"; font-size: 10px; }
+th[aria-sort="descending"] button::after { content: " \25bc"; font-size: 10px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.path { overflow-wrap: anywhere; color: var(--ink-2); font-size: 13px; min-width: 220px; }
+.toggle { all: unset; cursor: pointer; width: 20px; display: inline-block; color: var(--ink-2); }
+.toggle::before { content: "\25b6"; font-size: 11px; }
+.toggle[aria-expanded="true"]::before { content: "\25bc"; }
+tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
+.detail h3 { font-size: 14px; margin: 0 0 6px; }
+.objs { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0 0 12px; font-size: 14px; }
+.objs b { font-variant-numeric: tabular-nums; }
+.ftable { width: 100%; font-size: 13px; background: var(--surface); border: 1px solid var(--line); }
+.ftable td, .ftable th { padding: 5px 8px; }
+.v-Pass { color: #0b5d1e; font-weight: 600; } .v-Warn { color: #6b4e00; font-weight: 600; }
+.v-Fail { color: #8c1d1d; font-weight: 600; }
+.note { color: var(--ink-2); font-size: 13px; margin: 6px 0 0; }
+.noscript { color: var(--ink-2); font-size: 13px; }
+[hidden] { display: none !important; }
+@media print {
+  body { padding: 0; font-size: 11px; }
+  .controls, .toggle, .noscript, details.alt { display: none; }
+  .tablewrap { border: 0; overflow: visible; }
+  thead th { position: static; }
+  tr { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>qctrack report</h1>
+<p class="meta"><span>Scanned {{ analyzed_at }}</span><span>Profile {{ profile.label }} (sha256 <code>{{ profile.content_hash[:12] }}</code>)</span><span>{{ generator }}</span></p>
+
+<h2>Summary</h2>
+<div class="tiles">
+  <div class="tile"><b>{{ total }}</b><span>tracks</span></div>
+{% for letter, n in ratings %}
+  <div class="tile"><b>{{ n }}</b><span><span class="badge r-{{ letter }}">{{ letter }}</span></span></div>
+{% endfor %}
+  <div class="tile"><b>{{ provisional }}</b><span>provisional</span></div>
+  <div class="tile"><b>{{ unsupported }}</b><span>unsupported</span></div>
+  <div class="tile"><b>{{ errors }}</b><span>errors</span></div>
+{% if unscored %}
+  <div class="tile"><b>{{ unscored }}</b><span>unscored</span></div>
+{% endif %}
+</div>
+{% if gates %}
+<ul class="legend">
+{% for gate, meaning in gates %}
+  <li><b>{{ gate }}</b> {{ meaning }}</li>
+{% endfor %}
+</ul>
+{% endif %}
+
+<h2>Score distribution</h2>
+{% if scored %}
+<svg class="hist" viewBox="0 0 500 140" role="img" aria-label="Number of tracks per final-score band, 0 to 100 in steps of 10">
+  <line class="axis" x1="0" x2="500" y1="110" y2="110"/>
+{% for b in bars %}
+  <g>
+    <title>{{ b.label }}: {{ b.count }} track{{ "" if b.count == 1 else "s" }}</title>
+{% if b.count %}
+    <rect class="bar" x="{{ b.x }}" y="{{ b.y }}" width="36" height="{{ b.height }}" rx="3"/>
+    <text class="count" x="{{ b.x + 18 }}" y="{{ b.y - 4 }}">{{ b.count }}</text>
+{% endif %}
+    <text x="{{ b.x + 18 }}" y="126">{{ b.label }}</text>
+  </g>
+{% endfor %}
+</svg>
+<details class="alt"><summary>Show as table</summary>
+<table class="ftable" style="max-width: 320px"><thead><tr><th>Score</th><th class="num">Tracks</th></tr></thead><tbody>
+{% for b in bars %}
+<tr><td>{{ b.label }}</td><td class="num">{{ b.count }}</td></tr>
+{% endfor %}
+</tbody></table></details>
+{% else %}
+<p class="note">No track has a final score.</p>
+{% endif %}
+
+<h2>Tracks</h2>
+<div class="controls">
+  <input id="q" type="search" placeholder="Filter by album, title, artist, file or codec" aria-label="Filter tracks" disabled>
+  <select id="rating" aria-label="Filter by rating" disabled>
+    <option value="">All ratings</option>
+{% for letter, n in ratings %}
+    <option value="{{ letter }}">{{ letter }}</option>
+{% endfor %}
+    <option value="Unsupported">Unsupported</option>
+    <option value="Error">Error</option>
+  </select>
+  <span id="count" role="status"></span>
+  <noscript><span class="noscript">Sorting, filtering and details need JavaScript.</span></noscript>
+</div>
+<div class="tablewrap">
+<table id="tracks">
+<thead><tr>
+  <th aria-label="Details"></th>
+  <th data-col="1"><button type="button">Album</button></th>
+  <th data-col="2"><button type="button">Title</button></th>
+  <th data-col="3"><button type="button">Artist</button></th>
+  <th data-col="4"><button type="button">File</button></th>
+  <th data-col="5"><button type="button">Codec</button></th>
+  <th data-col="6" class="num"><button type="button">Score</button></th>
+  <th data-col="7"><button type="button">Rating</button></th>
+  <th data-col="8"><button type="button">Gates</button></th>
+</tr></thead>
+<tbody>
+{% for r in rows %}
+<tr data-i="{{ r.index }}" data-rating="{{ r.rating.rstrip('*') }}"><td><button type="button" class="toggle" aria-expanded="false" aria-label="Show details" hidden></button></td><td>{{ r.album }}</td><td>{{ r.title }}</td><td>{{ r.artist }}</td><td class="path">{{ r.path }}</td><td>{{ r.codec }}</td><td class="num" data-sort="{{ r.score_sort }}">{{ r.score }}</td><td><span class="badge r-{{ r.rating_class }}">{{ r.rating }}</span></td><td>{{ r.gates }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% if provisional %}
+<p class="note">* provisional: less than the required share of the weight was evaluated.</p>
+{% endif %}
+</main>
+
+<script id="data" type="application/json">{{ data_json | safe }}</script>
+<script>
+(function () {
+  "use strict";
+  var data = JSON.parse(document.getElementById("data").textContent);
+  var body = document.querySelector("#tracks tbody");
+  var rows = Array.prototype.slice.call(body.rows);
+  var q = document.getElementById("q");
+  var ratingSel = document.getElementById("rating");
+  var count = document.getElementById("count");
+  var text = [];  // lower-cased row text, filled on first use
+  var sortCol = null, sortDir = 1;
+
+  function el(tag, cls, txt) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (txt !== undefined) e.textContent = txt;
+    return e;
+  }
+
+  function closeDetails() {
+    Array.prototype.slice.call(body.querySelectorAll("tr.detail")).forEach(function (d) { d.remove(); });
+    rows.forEach(function (r) { r.firstChild.firstChild.setAttribute("aria-expanded", "false"); });
+  }
+
+  function buildDetail(i) {
+    var t = data.tracks[i];
+    var box = el("div");
+    if (t.msg) box.appendChild(el("p", "note", t.msg));
+    var objs = el("div", "objs");
+    data.objectives.forEach(function (o, k) {
+      var s = el("span", null, o[0] + " " + o[1] + " (weight " + o[2] + "): ");
+      s.appendChild(el("b", null, t.o[k] === "" ? "-" : t.o[k]));
+      objs.appendChild(s);
+    });
+    var facts = [];
+    if (t.dur) facts.push("duration " + t.dur + " s");
+    if (t.size !== undefined) facts.push(t.size + " bytes");
+    facts.push("coverage " + t.cov + "%");
+    box.appendChild(el("p", "note", facts.join(" · ")));
+    box.appendChild(objs);
+    if (t.tags) box.appendChild(el("p", "note", "Tag problems: " + t.tags.join("; ")));
+    if (t.f.length) {
+      var tbl = el("table", "ftable");
+      var head = el("tr");
+      ["Factor", "Measured", "Verdict", "Score", "Weight", "What it checks"].forEach(function (h) {
+        head.appendChild(el("th", null, h));
+      });
+      tbl.appendChild(el("thead")).appendChild(head);
+      var tb = el("tbody");
+      t.f.forEach(function (f) {
+        var info = data.factors[f[0]] || [f[0], "", 0];
+        var tr = el("tr");
+        tr.appendChild(el("td", null, f[0] + " " + info[0]));
+        tr.appendChild(el("td", null, f[3]));
+        tr.appendChild(el("td", f[2] ? "v-" + f[2] : null, f[2] || "–"));
+        tr.appendChild(el("td", "num", f[1] === "" ? "not evaluated" : f[1]));
+        tr.appendChild(el("td", "num", String(info[2])));
+        tr.appendChild(el("td", null, info[1]));
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      box.appendChild(tbl);
+    }
+    return box;
+  }
+
+  function toggle(row) {
+    var btn = row.firstChild.firstChild;
+    var next = row.nextSibling;
+    if (next && next.className === "detail") {
+      next.remove();
+      btn.setAttribute("aria-expanded", "false");
+      return;
+    }
+    var tr = el("tr", "detail");
+    var td = el("td");
+    td.colSpan = 9;
+    td.appendChild(buildDetail(+row.getAttribute("data-i")));
+    tr.appendChild(td);
+    row.after(tr);
+    btn.setAttribute("aria-expanded", "true");
+  }
+
+  function applyFilter() {
+    closeDetails();
+    var needle = q.value.trim().toLowerCase();
+    var rating = ratingSel.value;
+    if (needle && !text.length) rows.forEach(function (r) { text.push(r.textContent.toLowerCase()); });
+    var shown = 0;
+    rows.forEach(function (r, k) {
+      var ok = (!rating || r.getAttribute("data-rating") === rating) &&
+               (!needle || text[k].indexOf(needle) !== -1);
+      r.hidden = !ok;
+      if (ok) shown++;
+    });
+    count.textContent = shown === rows.length ? rows.length + " tracks" : shown + " of " + rows.length + " tracks";
+  }
+
+  function key(r, col) {
+    var c = r.cells[col];
+    if (col === 6) { var s = c.getAttribute("data-sort"); return s === "" ? null : parseFloat(s); }
+    var t = c.textContent.toLowerCase();
+    return t === "" ? null : t;
+  }
+
+  function sortBy(col) {
+    sortDir = sortCol === col ? -sortDir : 1;
+    sortCol = col;
+    closeDetails();
+    var order = rows.map(function (r, k) { return [r, k]; });
+    order.sort(function (a, b) {
+      var x = key(a[0], col), y = key(b[0], col);
+      if (x === y) return a[1] - b[1];
+      if (x === null) return 1;   // empty values last, either direction
+      if (y === null) return -1;
+      var c = typeof x === "number" ? x - y : x.localeCompare(y, undefined, {numeric: true});
+      return c === 0 ? a[1] - b[1] : c * sortDir;
+    });
+    var frag = document.createDocumentFragment();
+    var newRows = order.map(function (p) { return p[0]; });
+    var newText = text.length ? order.map(function (p) { return text[p[1]]; }) : text;
+    newRows.forEach(function (r) { frag.appendChild(r); });
+    body.appendChild(frag);
+    rows = newRows;
+    text = newText;
+    Array.prototype.slice.call(document.querySelectorAll("#tracks thead th[data-col]")).forEach(function (th) {
+      th.setAttribute("aria-sort", +th.getAttribute("data-col") === col ? (sortDir === 1 ? "ascending" : "descending") : "none");
+    });
+  }
+
+  rows.forEach(function (r) { r.firstChild.firstChild.hidden = false; });
+  q.disabled = false;
+  ratingSel.disabled = false;
+  q.addEventListener("input", applyFilter);
+  ratingSel.addEventListener("change", applyFilter);
+  document.querySelector("#tracks thead").addEventListener("click", function (e) {
+    var th = e.target.closest("th[data-col]");
+    if (th) sortBy(+th.getAttribute("data-col"));
+  });
+  body.addEventListener("click", function (e) {
+    var b = e.target.closest("button.toggle");
+    if (b) toggle(b.closest("tr"));
+  });
+  applyFilter();
+})();
+</script>
+</body>
+</html>

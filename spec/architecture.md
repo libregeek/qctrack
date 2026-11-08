@@ -228,6 +228,7 @@ Jinja2 is the weakest fit for the "actively maintained" rule, with no commit sin
 | hatchling | `python3-hatchling` | 1.31.0 | MIT | Not checked | Package build backend |
 | argparse-manpage | `python3-argparse-manpage` | 4.7 | Apache-2.0 | 2026-10-14 | Man page (REQ-CLI-13) |
 | pytest | `python3-pytest` | 8.4.2 | MIT | 2026-10-30 | Tests |
+| Chromium (optional) | `chromium` | 156.0.8078.79 | BSD-3-Clause and others (per Fedora) | Fedora build current | Runs the HTML report's script in a headless browser in `tests/test_html.py`; the test is skipped if it is not installed |
 | Hypothesis | `python3-hypothesis` | 6.123.0 | MPL-2.0 | 2026-10-30 | Scoring and parser properties, fuzz-style input |
 | mypy | `python3-mypy` | 1.18.2 | MIT and Apache-2.0 | 2026-10-30 | Type checks |
 | Ruff | `ruff` | 0.16.10 | MIT and others (per Fedora) | 2026-11-01 | Lint and formatting |

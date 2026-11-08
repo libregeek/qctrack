@@ -11,6 +11,7 @@ from pathlib import Path
 from qctrack.core.analyze import TrackReport
 from qctrack.core.profile import Profile
 from qctrack.report.csv_report import write_csv
+from qctrack.report.html_report import write_html
 from qctrack.report.json_report import write_json
 
 
@@ -56,6 +57,14 @@ def output_options() -> argparse.ArgumentParser:
         "--csv-bom", action="store_true", help="start the CSV file with a UTF-8 byte-order mark"
     )
     p.add_argument(
+        "--html",
+        nargs="?",
+        const="",
+        metavar="FILE",
+        help="also write a self-contained HTML report (default report.html); --html=- writes "
+        "it to standard output and turns the screen output off",
+    )
+    p.add_argument(
         "--json",
         nargs="?",
         const="",
@@ -78,14 +87,14 @@ def output_options() -> argparse.ArgumentParser:
 
 def check_options(args: argparse.Namespace) -> str | None:
     """A message if the combination of options makes no sense, else None."""
-    if args.csv == "-" and args.json == "-":
-        return "--csv=- and --json=- would both use standard output"
+    if [args.csv, args.json, args.html].count("-") > 1:
+        return "only one report can be written to standard output (-)"
     return None
 
 
 def screen_off(args: argparse.Namespace) -> bool:
     """True when nothing but a report may go to standard output."""
-    return bool(args.silent or args.csv == "-" or args.json == "-")
+    return bool(args.silent or "-" in (args.csv, args.json, args.html))
 
 
 def report_path(arg: str, default_name: str, output_dir: Path | None) -> Path:
@@ -111,6 +120,14 @@ def write_reports(
             write=lambda f: write_csv(
                 f, reports, profile, values=args.csv_values, analyzed_at=analyzed_at
             ),
+        )
+    if args.html is not None:
+        _emit(
+            args.html,
+            "report.html",
+            args,
+            bom=False,
+            write=lambda f: write_html(f, reports, profile, analyzed_at=analyzed_at),
         )
     if args.json is not None:
         _emit(
