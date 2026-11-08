@@ -88,7 +88,7 @@ def test_new_analyser_version_ignores_old_rows(mp3: Path, monkeypatch: pytest.Mo
     assert main(["scan", str(mp3)]) == 0
     with ResultCache() as cache:
         assert cache.get(mp3, False) is not None
-        monkeypatch.setattr("qctrack.core.cache.ANALYSER_VERSION", 2)
+        monkeypatch.setattr("qctrack.core.cache.ANALYSER_VERSION", 999)
         assert cache.get(mp3, False) is None
 
 

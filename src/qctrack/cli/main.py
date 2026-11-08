@@ -31,6 +31,7 @@ from qctrack.core.scoring import Status, gate_legend
 from qctrack.core.storage import classify, default_jobs
 from qctrack.core.storage import describe as describe_storage
 from qctrack.core.tags import StoredGain, TagInfo, lame_gains
+from qctrack.report.csv_report import now_iso, write_csv
 
 # Used only to choose which files inside a folder are worth examining. The format of
 # a file is always decided from its content (REQ-FMT-04). Files named on the command
@@ -110,6 +111,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scan.add_argument(
         "--no-cache", action="store_true", help="ignore and do not update the result cache"
+    )
+    scan.add_argument(
+        "--csv",
+        nargs="?",
+        const="",
+        metavar="FILE",
+        help="also write a CSV report (default report.csv); --csv=- writes it to standard "
+        "output and turns the screen output off",
+    )
+    scan.add_argument(
+        "--csv-values",
+        action="store_true",
+        help="add a measured-value column next to each factor score in the CSV",
+    )
+    scan.add_argument(
+        "--csv-bom", action="store_true", help="start the CSV file with a UTF-8 byte-order mark"
+    )
+    scan.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        metavar="DIR",
+        help="folder for report files with default names (default: current folder)",
+    )
+    scan.add_argument(
+        "--silent", action="store_true", help="no results or progress on the terminal"
     )
     scan.add_argument("--profile", type=Path, help="scoring profile (default: user or bundled)")
     scan.add_argument("-v", "--verbose", action="store_true", help="show measurements")
@@ -435,6 +462,44 @@ def _store(
     return cache
 
 
+def _print_screen(
+    reports: Sequence[TrackReport], profile: Profile, paint: Painter, verbose: bool
+) -> None:
+    if reports:
+        _print_table(reports, paint)
+        print()
+    if verbose:
+        for report in reports:
+            _print_details(report, paint)
+    print(_summary(reports, paint))
+    legend = _legend(reports, profile, paint)
+    if legend:
+        print(legend)
+
+
+def _report_path(arg: str, default_name: str, output_dir: Path | None) -> Path:
+    """A custom name is used as given; the default name goes in the output folder."""
+    return Path(arg) if arg else (output_dir or Path()) / default_name
+
+
+def _write_reports(
+    args: argparse.Namespace, reports: Sequence[TrackReport], profile: Profile
+) -> None:
+    if args.csv is None:
+        return
+    stamp = now_iso()
+    if args.csv == "-":
+        if args.csv_bom:
+            sys.stdout.write("\ufeff")
+        write_csv(sys.stdout, reports, profile, values=args.csv_values, analyzed_at=stamp)
+        return
+    if args.output_dir and not args.csv:
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+    path = _report_path(args.csv, "report.csv", args.output_dir)
+    with open(path, "w", encoding="utf-8-sig" if args.csv_bom else "utf-8", newline="") as f:
+        write_csv(f, reports, profile, values=args.csv_values, analyzed_at=stamp)
+
+
 def _scan(args: argparse.Namespace) -> int:
     try:
         profile = resolve_profile(args.profile)
@@ -454,6 +519,7 @@ def _scan(args: argparse.Namespace) -> int:
     try:
         todo = _from_cache(cache, files, args.quick, profile, by_index)
         progress = Progress(len(todo), sys.stderr)
+        progress.enabled = progress.enabled and not args.silent
         try:
             with WorkerPool(
                 jobs, quick=args.quick, timeout_s=args.timeout, memory_mb=DEFAULT_MEMORY_MB
@@ -480,16 +546,15 @@ def _scan(args: argparse.Namespace) -> int:
         if cache is not None:
             cache.close()
     reports = [by_index[i] for i in sorted(by_index)]  # discovery order
-    if reports:
-        _print_table(reports, paint)
-        print()
-    if args.verbose:
-        for report in reports:
-            _print_details(report, paint)
-    print(_summary(reports, paint))
-    legend = _legend(reports, profile, paint)
-    if legend:
-        print(legend)
+    if not (args.silent or args.csv == "-"):
+        _print_screen(reports, profile, paint, args.verbose)
+    try:
+        _write_reports(args, reports, profile)
+    except OSError as e:
+        print(
+            f"qctrack: cannot write report: {e.filename or ''} {e.strerror or e}", file=sys.stderr
+        )
+        return EXIT_FATAL
     problems = any(r.score.status in (Status.UNSUPPORTED, Status.ERROR) for r in reports)
     if args.fail_below is not None:
         below = [

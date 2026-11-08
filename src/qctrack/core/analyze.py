@@ -36,7 +36,7 @@ Block = npt.NDArray[np.float32]
 
 #: Raise this whenever a change to pass 1 or 2 (or to the measurement types) would give a
 #: different result for the same file, so cached measurements are not reused (REQ-NFR-15).
-ANALYSER_VERSION = 1
+ANALYSER_VERSION = 2  # 2: Measured gained ``size``
 
 
 @dataclass
@@ -50,6 +50,8 @@ class Measured:
     error: str = ""
     tags: TagInfo = field(default_factory=TagInfo)
     measurements: TrackMeasurements | None = None
+    #: File size in bytes, for reports.
+    size: int | None = None
 
 
 @dataclass
@@ -60,6 +62,7 @@ class TrackReport:
     message: str = ""
     tags: TagInfo = field(default_factory=TagInfo)
     measurements: TrackMeasurements | None = None
+    size: int | None = None
     factors: list[FactorResult] = field(default_factory=list)
     score: TrackScore = field(default_factory=error_score)
 
@@ -68,6 +71,7 @@ def measure_file(path: Path, quick: bool = False) -> Measured:
     """Passes 1 and 2 for one file. Never raises for a bad file: ``error`` is set instead."""
     out = Measured(path)
     try:
+        out.size = path.stat().st_size
         out.detection = detect_file(path)
         fmt = out.detection.format
         if not out.detection.supported:
@@ -89,7 +93,12 @@ def measure_file(path: Path, quick: bool = False) -> Measured:
 def score_measured(measured: Measured, profile: Profile) -> TrackReport:
     """Pass 3: derived factors, gates and rating. A pure function of the measurements."""
     report = TrackReport(
-        measured.path, measured.detection, measured.error, measured.tags, measured.measurements
+        measured.path,
+        measured.detection,
+        measured.error,
+        measured.tags,
+        measured.measurements,
+        measured.size,
     )
     if measured.error:
         report.score = error_score()

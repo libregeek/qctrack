@@ -348,7 +348,8 @@ The report is one row per track with identity columns, factor scores, objective 
 | rating | B | A–F |
 | gates\_applied | G4 | Semicolon-separated gate IDs |
 | coverage\_pct | 100 |  |
-| flags | modified\_since\_encoding | Short machine-readable notes |
+| flags | no\_tags;tag\_problems | Short machine-readable notes (more arrive with later features, for example modified\_since\_encoding) |
+| message | Permission denied | Why a file is Error; empty otherwise (column added in 5.1) |
 | profile | default@1.0 | Scoring profile name and version |
 | analyzer\_version | 1.0.0 |  |
 | analyzed\_at | 2026-11-01T14:30:00+05:30 |  |

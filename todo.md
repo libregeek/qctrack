@@ -69,7 +69,7 @@ Run from source: `PYTHONPATH=src python3 -m qctrack ...`
   Test: `python3 -m pytest tests/test_style.py -v`; look at `qctrack scan folder` in your terminal, then `NO_COLOR=1 qctrack scan folder` and `qctrack scan folder | cat` for plain text.
 
 ## M5 Reports
-- [ ] **5.1 CSV** (RFC 4180, CRLF, N/A empty, formula escaping, `--csv=-`).
+- [~] **5.1 CSV** (RFC 4180, CRLF, N/A empty, formula escaping, `--csv=-`). `report/csv_report.py`; `scan --csv[=FILE]` (default `report.csv` in `-o/--output-dir`, created if missing; a custom name is used as given; overwritten without asking), `--csv=-` to standard output with the screen output off, `--csv-values` (value column per factor), `--csv-bom`, and `--silent`. Columns follow section 6.3 in catalogue order, always present; added `message` (why a file is Error). Cells starting with `= + - @ −`, tab or CR get a leading `'`, so a negative value such as `-2.6 dBTP` also shows with it. Unwritable report gives exit 3. `Measured` gained `size` (`ANALYSER_VERSION` is now 2, so old cache entries are re-analysed once). Not done: the optional `sha256` column (REQ-ACC-05), left until the report options are settled. Note `--csv` with no `=` must come after the paths (`scan DIR --csv`), because argparse would take the next word as its file name; this is why the spec requires the `=` form.
   Test: opens correctly in LibreOffice; a tag starting with `=` is escaped.
 - [ ] **5.2 JSON** (`report.json`).
   Test: contains all measurements, scores and the profile hash.

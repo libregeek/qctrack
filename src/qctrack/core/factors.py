@@ -60,6 +60,15 @@ class TrackMeasurements:
     loudness: list[LoudnessResult] = field(default_factory=list)
     spectrum: list[SpectrumResult] = field(default_factory=list)
 
+    @property
+    def duration_s(self) -> float | None:
+        """Length in seconds as counted from the stream (not the declared length)."""
+        if self.mp3 is not None:
+            return self.mp3.counted_duration_s
+        if self.ogg is not None:
+            return self.ogg.duration_s
+        return None
+
 
 def _worst(verdicts: Iterable[Verdict]) -> Verdict:
     return max(verdicts, key=_ORDER.__getitem__)
