@@ -1,0 +1,247 @@
+from pathlib import Path
+
+import pytest
+
+from qctrack.core.authenticity import Verdict
+from qctrack.core.decode_errors import DecodeErrors
+from qctrack.core.detect import Format
+from qctrack.core.factors import TrackMeasurements, factor_results
+from qctrack.core.loudness import LoudnessResult
+from qctrack.core.mp3scan import LameTag, Mp3Mode, Mp3Scan
+from qctrack.core.oggscan import OggScan, OggStream, VorbisHeader
+from qctrack.core.pcm import ChannelResult, ClippingResult
+from qctrack.core.profile import load_default, load_profile
+from qctrack.core.scoring import FactorResult, Status, score_track
+from qctrack.core.spectrum import SpectrumResult
+
+P = load_default()
+ALL_MP3 = {
+    "F1.01", "F1.03", "F1.04", "F1.05", "F1.06", "F1.10", "F2.01", "F2.02", "F2.03", "F2.06",
+    "F2.07", "F2.08", "F2.10", "F2.12", "F3.01", "F3.02", "F3.03", "F3.06",
+}  # fmt: skip
+
+
+def lame(preset: int, encoder: str = "LAME3.100", lowpass: int = 20500) -> LameTag:
+    # preset field: 8-320 = kbps, 410 = V9 ... 500 = V0, 1003 = insane
+    return LameTag(encoder, "VBR", 1, lowpass, preset, 0, 0, 0, 0, 0, 0.0, None, None, True)
+
+
+def mp3(**kw: object) -> Mp3Scan:
+    base: dict[str, object] = {
+        "size": 4_000_000, "frame_count": 1000, "sample_rate": 44100,
+        "channel_mode": "Joint stereo", "average_bitrate_kbps": 320.0, "mode": Mp3Mode.CBR,
+        "sample_rates_seen": {44100}, "encoder": "LAME3.100", "lame": lame(320),
+    }  # fmt: skip
+    return Mp3Scan(**{**base, **kw})  # type: ignore[arg-type]
+
+
+def spectrum(cutoff: float = 20500.0, cliff: bool = True, rate: int = 44100) -> SpectrumResult:
+    return SpectrumResult(
+        rate=rate, frames=100, loud_frames=100, measured=True, nyquist_hz=rate / 2,
+        cutoff_hz=cutoff, has_cliff=cliff,
+    )  # fmt: skip
+
+
+def pcm(**kw: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "decode_errors": DecodeErrors(),
+        "clipping": ClippingResult(samples=1_000_000),
+        "channels": [ChannelResult(2, 1000, [-20.0, -20.0], correlation=0.5)],
+        "loudness": [LoudnessResult(2, 44100, 1000, -3.0, -2.0, -14.0, 8.0)],
+        "spectrum": [spectrum()],
+    }
+    return {**base, **kw}
+
+
+def run(scan: Mp3Scan, **kw: object) -> dict[str, FactorResult]:
+    m = TrackMeasurements(Format.MP3, mp3=scan, **pcm(**kw))  # type: ignore[arg-type]
+    return {r.factor: r for r in factor_results(m, P)}
+
+
+def test_clean_320_mp3_scores_a_hundred() -> None:
+    results = run(mp3())
+    assert set(results) == ALL_MP3
+    assert all(r.score == 100.0 for r in results.values())
+    s = score_track(results.values(), P)
+    assert (s.final_score, s.rating, s.status, s.gates) == (100.0, "A", Status.SCORED, ())
+
+
+def test_fake_320_with_low_cutoff_gets_g4() -> None:
+    results = run(mp3(), spectrum=[spectrum(cutoff=16000.0)])
+    assert results["F3.02"].verdict is Verdict.FAIL
+    assert results["F3.01"].verdict is Verdict.FAIL
+    s = score_track(results.values(), P)
+    assert s.gates == ("G4",) and s.rating == "D"
+    assert s.final_score is not None and s.final_score <= 59
+
+
+def test_truncated_mp3_gets_g2() -> None:
+    results = run(mp3(truncated_bytes=500))
+    assert results["F2.02"].verdict is Verdict.FAIL
+    s = score_track(results.values(), P)
+    assert (s.gates, s.rating, s.final_score) == (("G2",), "F", 39.0)
+
+
+def test_sync_losses_and_unidentified_data() -> None:
+    assert run(mp3(sync_losses=2))["F2.01"].verdict is Verdict.WARN
+    assert run(mp3(sync_losses=4))["F2.01"].verdict is Verdict.FAIL
+    assert run(mp3(unidentified_bytes=2000))["F2.03"].verdict is Verdict.WARN  # 0.05%
+    assert run(mp3(unidentified_bytes=40_000))["F2.03"].verdict is Verdict.FAIL  # 1%
+
+
+def test_bitrate_bands_without_a_lame_preset() -> None:
+    kw = {"lame": None, "encoder": None}
+    assert run(mp3(average_bitrate_kbps=192.0, **kw))["F1.01"].score == pytest.approx(
+        75 + 25 * 32 / 96
+    )
+    low = run(mp3(average_bitrate_kbps=96.0, **kw))["F1.01"]
+    assert (low.score, low.verdict) == (25.0, Verdict.FAIL)
+    assert run(mp3(average_bitrate_kbps=140.0, **kw))["F1.01"].verdict is Verdict.WARN
+
+
+def test_lame_v0_to_v2_is_high_whatever_the_average() -> None:
+    v1 = run(mp3(average_bitrate_kbps=190.0, lame=lame(490)))["F1.01"]
+    assert (v1.score, v1.verdict) == (100.0, Verdict.PASS)
+    v7 = run(mp3(average_bitrate_kbps=190.0, lame=lame(430)))["F1.01"]
+    assert v7.verdict is Verdict.WARN
+
+
+def test_encoder_and_preset() -> None:
+    old = run(mp3(encoder="LAME3.97", lame=lame(490, encoder="LAME3.97")))
+    assert old["F1.05"].verdict is Verdict.WARN
+    assert run(mp3(encoder="Xing", lame=None))["F1.05"].verdict is Verdict.WARN
+    assert run(mp3(encoder="LAME3.98.4", lame=lame(490)))["F1.05"].verdict is Verdict.PASS
+    assert run(mp3(lame=lame(450)))["F1.06"].verdict is Verdict.WARN  # V5
+    assert run(mp3(lame=lame(490)))["F1.06"].verdict is Verdict.PASS  # V1
+    assert run(mp3(lame=lame(1003)))["F1.06"].verdict is Verdict.PASS  # insane
+    assert run(mp3(lame=lame(192)))["F1.06"].verdict is Verdict.WARN  # ABR/CBR 192
+
+
+def test_factors_with_nothing_stored_are_left_out_not_penalised() -> None:
+    results = run(mp3(lame=None, encoder=None))
+    assert "F1.06" not in results and "F1.08" not in results and "F3.03" not in results
+    s = score_track(results.values(), P)
+    assert s.coverage_pct == 100.0
+
+
+def test_sample_rate_channels_and_length() -> None:
+    assert run(mp3(sample_rate=32000))["F1.03"].verdict is Verdict.WARN
+    assert run(mp3(sample_rate=22050))["F1.03"].verdict is Verdict.FAIL
+    assert run(mp3(sample_rates_seen={44100, 48000}))["F1.03"].verdict is Verdict.WARN
+    assert run(mp3(channel_mode="Mono"))["F1.04"].verdict is Verdict.WARN
+    assert run(mp3(length_mismatch=0.0))["F1.08"].verdict is Verdict.PASS
+    assert run(mp3(length_mismatch=0.004))["F1.08"].verdict is Verdict.WARN
+    assert run(mp3(length_mismatch=0.01))["F1.08"].verdict is Verdict.FAIL
+
+
+def test_pcm_factors() -> None:
+    r = run(
+        mp3(),
+        decode_errors=DecodeErrors(concealed=3),
+        clipping=ClippingResult(samples=1000, clipped_samples=1),  # 0.1%
+        loudness=[LoudnessResult(2, 44100, 1, 0.0, 0.5, -8.0, 2.0)],
+    )
+    assert r["F2.06"].verdict is Verdict.WARN
+    assert r["F2.07"].verdict is Verdict.WARN
+    assert r["F2.08"].verdict is Verdict.WARN and r["F2.08"].score == 50.0
+    assert r["F2.10"].verdict is Verdict.FAIL
+    assert run(mp3(), decode_errors=DecodeErrors(concealed=9))["F2.06"].verdict is Verdict.FAIL
+
+
+@pytest.mark.parametrize(
+    ("result", "verdict"),
+    [
+        (ChannelResult(2, 10, [-20.0, -20.0], correlation=0.4), Verdict.PASS),
+        (ChannelResult(2, 10, [-20.0, -20.0], correlation=1.0), Verdict.WARN),
+        (ChannelResult(2, 10, [-20.0, -20.0], correlation=-0.9), Verdict.FAIL),
+        (ChannelResult(2, 10, [-20.0, -90.0], correlation=0.1, dead_channels=[1]), Verdict.FAIL),
+        (ChannelResult(1, 10, [-20.0]), Verdict.PASS),
+    ],
+)
+def test_channel_anomalies(result: ChannelResult, verdict: Verdict) -> None:
+    assert run(mp3(), channels=[result])["F2.12"].verdict is verdict
+
+
+def test_cutoff_scores_and_no_cliff() -> None:
+    assert run(mp3(), spectrum=[spectrum(18000.0)])["F3.01"].score == pytest.approx(75.0)
+    full = run(mp3(), spectrum=[spectrum(22050.0, cliff=False)])
+    assert full["F3.01"].score == 100.0
+
+
+def test_declared_lowpass_far_above_measured_cutoff() -> None:
+    r = run(mp3(lame=lame(320, lowpass=20500)), spectrum=[spectrum(17000.0)])["F3.03"]
+    assert r.verdict is Verdict.FAIL  # 3.5 kHz below the declaration
+    assert 0 < (r.score or 0) < 50
+
+
+def test_upsampled_content_fails_f3_06() -> None:
+    up = spectrum()
+    up.upsampled_from_hz = 22050
+    assert run(mp3(), spectrum=[up])["F3.06"].verdict is Verdict.FAIL
+
+
+def test_quick_scan_leaves_pass_2_factors_not_evaluated_and_is_provisional() -> None:
+    m = TrackMeasurements(Format.MP3, mp3=mp3())
+    results = {r.factor: r for r in factor_results(m, P)}
+    for f in ("F2.06", "F2.07", "F2.08", "F2.10", "F2.12", "F3.01", "F3.02", "F3.06"):
+        assert f in results and results[f].score is None
+    s = score_track(results.values(), P)
+    assert s.status is Status.PROVISIONAL and s.coverage_pct < 70 and "G5" in s.gates
+
+
+def test_unmeasured_spectrum_is_not_evaluated() -> None:
+    quiet = SpectrumResult(rate=44100)
+    r = run(mp3(), spectrum=[quiet])
+    assert r["F3.01"].score is None and r["F3.02"].score is None
+
+
+def test_scores_depend_on_the_profile(tmp_path: Path) -> None:
+    path = tmp_path / "p.toml"
+    path.write_text('[curves]\n"F3.01" = [[0, 0], [22000, 100]]\n')
+    custom = load_profile(path)
+    m = TrackMeasurements(Format.MP3, mp3=mp3(), **pcm(spectrum=[spectrum(11000.0)]))  # type: ignore[arg-type]
+    by = {r.factor: r for r in factor_results(m, custom)}
+    assert by["F3.01"].score == pytest.approx(50.0)
+
+
+# --- Ogg Vorbis ---------------------------------------------------------------------------
+
+
+def vorbis(**kw: object) -> OggScan:
+    hdr = VorbisHeader(
+        version=0, channels=2, rate=44100, bitrate_max=0, bitrate_nominal=192000, bitrate_min=0
+    )
+    stream = OggStream(
+        serial=1, link=0, codec=Format.VORBIS, first_page=0, pages=100, page_bytes=1_000_000,
+        first_granule=0, last_granule=44100 * 40, has_eos=True, vorbis=hdr,
+    )  # fmt: skip
+    return OggScan(size=1_000_500, streams=[stream], **kw)  # type: ignore[arg-type]
+
+
+def run_ogg(scan: OggScan, **kw: object) -> dict[str, FactorResult]:
+    m = TrackMeasurements(Format.VORBIS, ogg=scan, **pcm(**kw))  # type: ignore[arg-type]
+    return {r.factor: r for r in factor_results(m, P)}
+
+
+def test_clean_vorbis_scores_and_leaves_out_mp3_only_factors() -> None:
+    results = run_ogg(vorbis())
+    assert set(results) == {
+        "F1.01", "F1.03", "F1.04", "F1.10", "F2.01", "F2.02", "F2.03", "F2.05", "F2.06",
+        "F2.07", "F2.08", "F2.10", "F2.12", "F2.14", "F3.06",
+    }  # fmt: skip
+    assert all(r.score == 100.0 for r in results.values()), {
+        f: (r.score, r.detail) for f, r in results.items() if r.score != 100.0
+    }
+
+
+def test_vorbis_bitrate_and_integrity() -> None:
+    assert run_ogg(vorbis())["F1.01"].detail == "200 kbps avg"
+    assert run_ogg(vorbis(crc_failures=2))["F2.05"].verdict is Verdict.FAIL
+    assert run_ogg(vorbis(lost_pages=1))["F2.01"].verdict is Verdict.WARN
+    assert run_ogg(vorbis(granule_backwards=1))["F2.14"].verdict is Verdict.FAIL
+    assert run_ogg(vorbis(truncated_bytes=10))["F2.02"].verdict is Verdict.FAIL
+
+
+def test_unsupported_format_is_rejected() -> None:
+    with pytest.raises(ValueError, match="cannot score"):
+        factor_results(TrackMeasurements(Format.FLAC), P)

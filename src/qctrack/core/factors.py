@@ -1,0 +1,341 @@
+"""Factor scoring: turn one track's measurements into a ``FactorResult`` per factor.
+
+This is the first half of pass 3 (the second half is ``scoring.score_track``). It is a pure
+function of the measurements and the profile, so ``rescore`` can call it without audio.
+
+A factor is handled in one of three ways:
+
+* scored: it applies and has a measurement, so it gets a score and verdict;
+* not evaluated (``score=None``): it applies, but the measurement is missing, for example
+  the PCM factors in a quick scan. This lowers coverage (gate G5);
+* left out: it does not apply to the codec, or this release has no measurement for it yet
+  (F1.09 and the other Info factors, F2.11, F2.13, F3.05, F3.10, and F3.04 whose matrix
+  entry is Info only), or the file stores nothing to judge (no declared length for F1.08,
+  no LAME preset for F1.06). Left-out factors never lower coverage.
+
+Numeric factors use the profile's curves; categorical ones follow the matrix verdicts.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+
+from qctrack.core.authenticity import Verdict, claimed_vs_effective, declared_vs_measured
+from qctrack.core.decode_errors import DecodeErrors
+from qctrack.core.detect import Format
+from qctrack.core.loudness import LoudnessResult
+from qctrack.core.mp3scan import LameTag, Mp3Mode, Mp3Scan
+from qctrack.core.oggscan import OggScan
+from qctrack.core.pcm import ChannelResult, ClippingResult
+from qctrack.core.profile import Curve, Profile
+from qctrack.core.scoring import (
+    FactorResult,
+    score_piecewise,
+    score_verdict,
+    verdict_for_score,
+)
+from qctrack.core.spectrum import SpectrumResult
+
+_ORDER = {Verdict.PASS: 0, Verdict.WARN: 1, Verdict.FAIL: 2}
+_SUPPORTED_SAMPLE_RATES = (44100, 48000)
+#: Sample rates at or below this are Fail (F1.03).
+_LOW_SAMPLE_RATE = 24000
+#: First LAME release that counts as a current reference encoder (F1.05).
+_CURRENT_LAME = (3, 98)
+
+
+@dataclass
+class TrackMeasurements:
+    """Everything measured for one supported track. Pass-2 fields stay empty or None when
+    the track was only scanned quickly."""
+
+    format: Format
+    mp3: Mp3Scan | None = None
+    ogg: OggScan | None = None
+    decode_errors: DecodeErrors | None = None
+    clipping: ClippingResult | None = None
+    channels: list[ChannelResult] = field(default_factory=list)
+    loudness: list[LoudnessResult] = field(default_factory=list)
+    spectrum: list[SpectrumResult] = field(default_factory=list)
+
+
+def _worst(verdicts: Iterable[Verdict]) -> Verdict:
+    return max(verdicts, key=_ORDER.__getitem__)
+
+
+def _numeric(factor: str, value: float, curve: Curve, detail: str) -> FactorResult:
+    score = score_piecewise(value, curve)
+    return FactorResult(factor, score, verdict_for_score(score), detail)
+
+
+def _categorical(factor: str, verdict: Verdict, detail: str) -> FactorResult:
+    return FactorResult(factor, score_verdict(verdict), verdict, detail)
+
+
+def _not_evaluated(factor: str, why: str) -> FactorResult:
+    return FactorResult(factor, None, None, why)
+
+
+def factor_results(m: TrackMeasurements, profile: Profile) -> list[FactorResult]:
+    """Factor results for an MP3 or Ogg Vorbis track, in catalogue order."""
+    if m.format is Format.MP3 and m.mp3 is not None:
+        out = _mp3_pass1(m.mp3, profile)
+        lame = m.mp3.lame
+        avg, lowpass = m.mp3.average_bitrate_kbps, lame.lowpass_hz if lame else 0
+        preset = lame.preset_name if lame else None
+    elif m.format is Format.VORBIS and m.ogg is not None:
+        out = _vorbis_pass1(m.ogg, profile)
+        avg, lowpass, preset = m.ogg.average_bitrate_kbps, 0, None
+    else:
+        raise ValueError(f"cannot score {m.format.value}: no measurements for a supported format")
+    out += _pcm_factors(m, profile)
+    out += _spectral_factors(m, profile, avg, lowpass, preset)
+    return sorted(out, key=lambda r: r.factor)
+
+
+# --- pass 1: headers and raw bytes --------------------------------------------------------
+
+
+def _mp3_pass1(s: Mp3Scan, profile: Profile) -> list[FactorResult]:
+    out = [FactorResult("F1.10", 100.0, Verdict.PASS, "MP3")]
+    if s.frame_count == 0:
+        return out + [_categorical("F2.01", Verdict.FAIL, "no MPEG audio frames found")]
+    lame = s.lame
+
+    # F1.01: a LAME V0-V2 preset is High whatever the average (quality matrix).
+    kbps = s.average_bitrate_kbps
+    v = _vbr_preset(lame) if lame else None
+    if lame and v is not None and v <= 2:
+        out.append(_categorical("F1.01", Verdict.PASS, f"{kbps:.0f} kbps avg, {lame.preset_name}"))
+    else:
+        out.append(_numeric("F1.01", kbps, profile.mp3_bitrate_anchors, f"{kbps:.0f} kbps avg"))
+
+    out.append(_sample_rate(s.sample_rate, len(s.sample_rates_seen) > 1))
+    mode = s.channel_mode
+    out.append(
+        _categorical("F1.04", Verdict.WARN if mode == "Mono" else Verdict.PASS, mode or "unknown")
+    )
+    out.append(_encoder(s))
+    quality = _quality_setting(s)
+    if quality is not None:
+        out.append(quality)
+    if s.length_mismatch is not None:  # without a Xing/LAME length there is nothing to compare
+        pct = s.length_mismatch * 100
+        verdict = Verdict.PASS if pct < 1e-9 else Verdict.WARN if pct < 1 else Verdict.FAIL
+        score = score_piecewise(pct, profile.curves["F1.08"])
+        out.append(FactorResult("F1.08", score, verdict, f"{pct:.2f}% mismatch"))
+
+    out.append(
+        _numeric("F2.01", s.sync_losses, profile.curves["F2.01"], f"{s.sync_losses} sync losses")
+    )
+    out.append(_truncation(s.truncated, f"{s.truncated_bytes} bytes missing"))
+    pct = s.unidentified_fraction * 100
+    out.append(_numeric("F2.03", pct, profile.curves["F2.03"], f"{pct:.3f}% unidentified"))
+    return out
+
+
+def _vorbis_pass1(o: OggScan, profile: Profile) -> list[FactorResult]:
+    out = [FactorResult("F1.10", 100.0, Verdict.PASS, "Vorbis")]
+    streams = [s.vorbis for s in o.vorbis_streams if s.vorbis is not None]
+    if streams:
+        kbps = o.average_bitrate_kbps
+        out.append(_numeric("F1.01", kbps, profile.vorbis_bitrate_anchors, f"{kbps:.0f} kbps avg"))
+        out.append(_sample_rate(min(v.rate for v in streams), len({v.rate for v in streams}) > 1))
+        if all(v.channels <= 2 for v in streams):
+            counts = {v.channels for v in streams}
+            verdict = Verdict.WARN if 1 in counts else Verdict.PASS
+            out.append(
+                _categorical("F1.04", verdict, "/".join(str(c) for c in sorted(counts)) + " ch")
+            )
+    structure = o.lost_pages + o.sequence_errors + o.orphan_pages
+    out.append(
+        _numeric("F2.01", structure, profile.curves["F2.01"], f"{structure} structure errors")
+    )
+    out.append(_truncation(o.truncated, f"{o.truncated_bytes} bytes missing"))
+    pct = o.unidentified_fraction * 100
+    out.append(_numeric("F2.03", pct, profile.curves["F2.03"], f"{pct:.3f}% unidentified"))
+    out.append(
+        _numeric("F2.05", o.crc_failures, profile.curves["F2.05"], f"{o.crc_failures} bad pages")
+    )
+    if o.granule_backwards:
+        out.append(_categorical("F2.14", Verdict.FAIL, f"{o.granule_backwards} granule reversals"))
+    elif o.chained:
+        out.append(_categorical("F2.14", Verdict.WARN, f"chained, {o.link_count} links"))
+    else:
+        out.append(_categorical("F2.14", Verdict.PASS, "one stream, continuous"))
+    return out
+
+
+def _sample_rate(rate: int, inconsistent: bool) -> FactorResult:
+    if rate in _SUPPORTED_SAMPLE_RATES:
+        verdict = Verdict.PASS
+    elif rate <= _LOW_SAMPLE_RATE:
+        verdict = Verdict.FAIL
+    else:
+        verdict = Verdict.WARN
+    if inconsistent:
+        verdict = _worst([verdict, Verdict.WARN])
+    return _categorical(
+        "F1.03", verdict, f"{rate} Hz" + (", changes within file" if inconsistent else "")
+    )
+
+
+def _truncation(truncated: bool, detail: str) -> FactorResult:
+    if truncated:
+        return _categorical("F2.02", Verdict.FAIL, f"truncated, {detail}")
+    return _categorical("F2.02", Verdict.PASS, "complete")
+
+
+_LAME_VERSION = re.compile(r"^LAME(\d+)\.(\d+)")
+
+
+def _encoder(s: Mp3Scan) -> FactorResult:
+    name = s.encoder or "none stored"
+    m = _LAME_VERSION.match(name)
+    current = m is not None and (int(m.group(1)), int(m.group(2))) >= _CURRENT_LAME
+    return _categorical("F1.05", Verdict.PASS if current else Verdict.WARN, name)
+
+
+def _vbr_preset(lame: LameTag) -> int | None:
+    """The V number of a LAME VBR preset (V0-V9), or None."""
+    name = lame.preset_name
+    if name and name.startswith("V") and name[1:].isdigit():
+        return int(name[1:])
+    return {"standard": 2, "extreme": 0}.get(name or "")
+
+
+def _quality_setting(s: Mp3Scan) -> FactorResult | None:
+    lame = s.lame
+    if lame is None or lame.preset_name is None:
+        return None  # nothing stored to judge; the factor is left out, not penalised
+    name = lame.preset_name
+    v = _vbr_preset(lame)
+    if v is not None:
+        verdict = Verdict.PASS if v <= 2 else Verdict.WARN
+    elif name == "insane" or (lame.preset == 320 and s.mode is not Mp3Mode.VBR):
+        verdict = Verdict.PASS
+    else:
+        verdict = Verdict.WARN  # lower CBR/ABR rates, fast presets, r3mix, medium
+    return _categorical("F1.06", verdict, name)
+
+
+# --- pass 2: decoded audio ----------------------------------------------------------------
+
+
+def _pcm_factors(m: TrackMeasurements, profile: Profile) -> list[FactorResult]:
+    out: list[FactorResult] = []
+    c = profile.curves
+    quick = "not analysed (quick scan)"
+
+    if m.decode_errors is None:
+        out.append(_not_evaluated("F2.06", quick))
+    else:
+        n = m.decode_errors.count
+        out.append(_numeric("F2.06", n, c["F2.06"], f"{n} decode errors"))
+
+    if m.clipping is None:
+        out.append(_not_evaluated("F2.07", quick))
+    else:
+        out.append(
+            _numeric(
+                "F2.07",
+                m.clipping.clipped_percent,
+                c["F2.07"],
+                f"{m.clipping.clipped_percent:.4f}% clipped",
+            )
+        )
+
+    if not m.loudness:
+        out += [_not_evaluated("F2.08", quick), _not_evaluated("F2.10", quick)]
+    else:
+        peak = max(r.true_peak_db for r in m.loudness)
+        out.append(_numeric("F2.08", peak, c["F2.08"], f"{peak:.1f} dBTP"))
+        lra = min(r.lra_lu for r in m.loudness)
+        out.append(_numeric("F2.10", lra, c["F2.10"], f"LRA {lra:.1f} LU"))
+
+    if not m.channels:
+        out.append(_not_evaluated("F2.12", quick))
+    else:
+        out.append(_channels(m.channels))
+    return out
+
+
+def _channels(results: list[ChannelResult]) -> FactorResult:
+    verdicts: list[Verdict] = []
+    notes: list[str] = []
+    for r in results:
+        if r.dead_channels or r.inverted:
+            verdicts.append(Verdict.FAIL)
+            notes.append("dead channel" if r.dead_channels else "inverted channels")
+        elif r.fake_stereo:
+            verdicts.append(Verdict.WARN)
+            notes.append("fake stereo (L = R)")
+        else:
+            verdicts.append(Verdict.PASS)
+    verdict = _worst(verdicts)
+    return _categorical("F2.12", verdict, "; ".join(dict.fromkeys(notes)) or "channels active")
+
+
+# --- spectral factors ---------------------------------------------------------------------
+
+
+def _spectral_factors(
+    m: TrackMeasurements, profile: Profile, avg_kbps: float, lowpass_hz: int, preset: str | None
+) -> list[FactorResult]:
+    quick = "not analysed (quick scan)"
+    is_mp3 = m.format is Format.MP3
+    measured = [r for r in m.spectrum if r.measured]
+    out: list[FactorResult] = []
+    derived = ["F3.01", "F3.02", "F3.06"] + (["F3.03"] if lowpass_hz > 0 else [])
+    if is_mp3 is False:
+        derived = ["F3.06"]  # no Vorbis cutoff table yet (matrix: build from reference encodes)
+    if not measured:
+        why = quick if not m.spectrum else "too little loud audio to measure"
+        return [_not_evaluated(f, why) for f in derived]
+
+    if is_mp3:
+        out.append(_cutoff(measured, profile))
+        claims = [claimed_vs_effective(r, avg_kbps, preset) for r in measured]
+        valid = [c for c in claims if c is not None]
+        if valid:
+            worst = max(valid, key=lambda c: _ORDER[c.verdict])
+            said, found = worst.claimed.name.lower(), worst.effective.name.lower()
+            out.append(
+                _categorical("F3.02", worst.verdict, f"claims {said}, content supports {found}")
+            )
+        # No F3.02 when the sample rate is too low for the band table: left out, not penalised.
+        if lowpass_hz > 0:
+            decls = [d for r in measured if (d := declared_vs_measured(r, lowpass_hz))]
+            if decls:
+                d = max(decls, key=lambda d: d.delta_hz)
+                out.append(
+                    FactorResult(
+                        "F3.03",
+                        score_piecewise(d.delta_hz, profile.curves["F3.03"]),
+                        d.verdict,
+                        f"declared {d.declared_hz} Hz, measured {d.measured_hz:.0f} Hz",
+                    )
+                )
+    upsampled = [r.upsampled_from_hz for r in measured if r.upsampled_from_hz]
+    if upsampled:
+        out.append(_categorical("F3.06", Verdict.FAIL, f"looks resampled from {upsampled[0]} Hz"))
+    else:
+        out.append(_categorical("F3.06", Verdict.PASS, "not detected"))
+    return out
+
+
+def _cutoff(measured: list[SpectrumResult], profile: Profile) -> FactorResult:
+    """F3.01: the lowest cutoff of any stretch. No cliff means the band is not limited."""
+    cliffs = [r for r in measured if r.has_cliff]
+    if not cliffs:
+        return FactorResult("F3.01", 100.0, Verdict.PASS, "full band, no cutoff found")
+    low = min(cliffs, key=lambda r: r.cutoff_hz)
+    score = score_piecewise(low.cutoff_hz, profile.curves["F3.01"])
+    return FactorResult(
+        "F3.01", score, verdict_for_score(score), f"cutoff {low.cutoff_hz / 1000:.2f} kHz"
+    )
+
+
+__all__ = ["TrackMeasurements", "factor_results"]

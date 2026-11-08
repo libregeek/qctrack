@@ -18,6 +18,11 @@ from qctrack.core.profile import OBJECTIVES, RATING_KEYS, Profile
 _VERDICT_SCORE = {Verdict.PASS: 100.0, Verdict.WARN: 50.0, Verdict.FAIL: 0.0}
 
 
+def verdict_for_score(score: float) -> Verdict:
+    """Numeric factors: 100 is Pass, the Warn/Fail boundary (50) is still Warn."""
+    return Verdict.PASS if score >= 100 else Verdict.WARN if score >= 50 else Verdict.FAIL
+
+
 def score_verdict(verdict: Verdict) -> float:
     """Categorical factors: Pass 100, Warn 50, Fail 0 (REQ-SCR-02)."""
     return _VERDICT_SCORE[verdict]
@@ -51,6 +56,8 @@ class FactorResult:
     factor: str
     score: float | None
     verdict: Verdict | None = None
+    #: The measured value in words, for reports (REQ-FAC-01).
+    detail: str = ""
 
 
 class Status(enum.Enum):

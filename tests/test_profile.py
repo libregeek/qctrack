@@ -57,7 +57,16 @@ def test_anchors_replace_whole_curve(tmp_path: Path) -> None:
         ("[ratings]\nA = 70\nB = 75\n", 2, "overlap"),
         ("[ratings]\nD = 0\n", 2, "above 0"),
         ("[gates]\nG4_cap = 150\n", 2, "above 100"),
-        ("[bitrate.mp3]\nanchors = { 64 = 50, 128 = 10 }\n", 2, "must not decrease"),
+        (
+            "[bitrate.mp3]\nanchors = { 64 = 0, 128 = 50, 256 = 20 }\n",
+            2,
+            "keep rising or keep falling",
+        ),
+        ('[curves]\n"F9.99" = [[0, 100], [1, 0]]\n', 2, "unknown factor ID"),
+        ('[curves]\n"F2.07" = [[0, 100]]\n', 2, "at least two points"),
+        ('[curves]\n"F2.07" = [[0, 100], [0, 50]]\n', 2, "same value"),
+        ('[curves]\n"F2.07" = [[0, 100], [1, 300]]\n', 2, "above 100"),
+        ('[curves]\n"F2.07" = [1, 2]\n', 2, "pairs"),
         ("mystery = 1\n", 1, "unknown key"),
         ("[factors\n", 1, "invalid TOML"),
     ],
@@ -100,3 +109,17 @@ def test_cli_negative_weight_exits_2_naming_file_and_line(
 def test_cli_validate_ok(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["profile", "validate", str(write(tmp_path, '[factors]\n"F1.01" = 1\n'))]) == 0
     assert "OK" in capsys.readouterr().out
+
+
+def test_default_curves_and_vorbis_bitrate() -> None:
+    p = load_default()
+    assert p.curves["F2.07"] == ((0.001, 100), (0.1, 50), (1, 0))
+    assert p.curves["F2.10"][0] == (1, 0)  # a rising curve: higher is better
+    assert p.vorbis_bitrate_anchors == ((64, 0), (112, 50), (160, 100))
+
+
+def test_a_curve_override_replaces_that_factor_only(tmp_path: Path) -> None:
+    p = load_profile(write(tmp_path, '[curves]\n"F2.07" = [[0, 100], [2, 0]]\n'))
+    d = load_default()
+    assert p.curves["F2.07"] == ((0, 100), (2, 0))
+    assert p.curves["F2.06"] == d.curves["F2.06"]

@@ -21,10 +21,21 @@ from typing import Any
 OBJECTIVES = ("O1", "O2", "O3")
 GATE_KEYS = ("G2_cap", "G3_cap", "G4_cap", "G5_min_coverage")
 RATING_KEYS = ("A", "B", "C", "D")
-_TOP_LEVEL = ("name", "version", "objectives", "factors", "bitrate", "gates", "ratings")
+_TOP_LEVEL = (
+    "name",
+    "version",
+    "objectives",
+    "factors",
+    "bitrate",
+    "curves",
+    "gates",
+    "ratings",
+)
+BITRATE_CODECS = ("mp3", "vorbis")
 _DEFAULT_RESOURCE = "default-profile.toml"
 
 Path_ = tuple[str, ...]
+Curve = tuple[tuple[float, float], ...]
 
 
 class ProfileError(Exception):
@@ -44,7 +55,10 @@ class Profile:
     version: str
     objectives: Mapping[str, float]
     factors: Mapping[str, float]
-    mp3_bitrate_anchors: tuple[tuple[float, float], ...]
+    mp3_bitrate_anchors: Curve
+    vorbis_bitrate_anchors: Curve
+    #: Value-to-score curves of the numeric factors, by factor ID (REQ-SCR-01).
+    curves: Mapping[str, Curve]
     gates: Mapping[str, float]
     ratings: Mapping[str, float]
     content_hash: str  # sha256 of the merged content, recorded in reports (REQ-PRF-06)
@@ -152,6 +166,8 @@ def _validate(
             c.number(("factors", k), v, 0)
     if "bitrate" in data:
         _validate_bitrate(c, data["bitrate"])
+    if "curves" in data:
+        _curves(c, data["curves"], known_factors)
     if "gates" in data:
         gates = c.table(("gates",), data["gates"])
         c.unknown(("gates",), gates, GATE_KEYS)
@@ -166,20 +182,19 @@ def _validate(
 
 def _validate_bitrate(c: _Checker, value: object) -> None:
     codecs = c.table(("bitrate",), value)
-    c.unknown(("bitrate",), codecs, ("mp3",))
-    if "mp3" not in codecs:
-        return
-    mp3 = c.table(("bitrate", "mp3"), codecs["mp3"])
-    c.unknown(("bitrate", "mp3"), mp3, ("anchors",))
-    if "anchors" in mp3:
-        _anchors(c, ("bitrate", "mp3", "anchors"), mp3["anchors"])
+    c.unknown(("bitrate",), codecs, BITRATE_CODECS)
+    for codec, entry in codecs.items():
+        path = ("bitrate", codec)
+        table = c.table(path, entry)
+        c.unknown(path, table, ("anchors",))
+        if "anchors" in table:
+            _anchors(c, path + ("anchors",), table["anchors"])
 
 
-def _anchors(c: _Checker, path: Path_, value: object) -> tuple[tuple[float, float], ...]:
+def _anchors(c: _Checker, path: Path_, value: object) -> Curve:
+    """A ``{kbps = score}`` table."""
     table = c.table(path, value)
-    if len(table) < 2:
-        raise c.fail(path, f"{'.'.join(path)}: needs at least two points")
-    points: list[tuple[float, float]] = []
+    pairs: list[tuple[object, object]] = []
     for key, score in table.items():
         try:
             kbps = float(key)
@@ -187,14 +202,36 @@ def _anchors(c: _Checker, path: Path_, value: object) -> tuple[tuple[float, floa
             raise c.fail(path, f"{'.'.join(path)}: {key!r} is not a bitrate in kbps") from None
         if kbps <= 0:
             raise c.fail(path, f"{'.'.join(path)}: bitrate {key} must be above 0")
-        points.append((kbps, c.number(path, score, 0, 100)))
+        pairs.append((kbps, score))
+    return _points(c, path, pairs)
+
+
+def _points(c: _Checker, path: Path_, pairs: list[tuple[object, object]]) -> Curve:
+    label = ".".join(path)
+    if len(pairs) < 2:
+        raise c.fail(path, f"{label}: needs at least two points")
+    points: list[tuple[float, float]] = []
+    for x, score in pairs:
+        points.append((c.number(path, x, -1e12), c.number(path, score, 0, 100)))
     points.sort()
-    for (_, a), (kb, b) in zip(points, points[1:], strict=False):
-        if b < a:
-            raise c.fail(
-                path, f"{'.'.join(path)}: score falls at {kb:g} kbps; scores must not decrease"
-            )
+    xs = [x for x, _ in points]
+    if len(set(xs)) != len(xs):
+        raise c.fail(path, f"{label}: two points have the same value")
+    ys = [y for _, y in points]
+    if ys != sorted(ys) and ys != sorted(ys, reverse=True):
+        raise c.fail(path, f"{label}: scores must keep rising or keep falling")
     return tuple(points)
+
+
+def _curves(c: _Checker, value: object, known_factors: tuple[str, ...] | None) -> None:
+    table = c.table(("curves",), value)
+    for factor, raw in table.items():
+        path = ("curves", factor)
+        if known_factors is not None and factor not in known_factors:
+            raise c.fail(path, f"unknown factor ID {factor!r}")
+        if not isinstance(raw, list) or not all(isinstance(p, list) and len(p) == 2 for p in raw):
+            raise c.fail(path, f"curves.{factor}: must be a list of [value, score] pairs")
+        _points(c, path, [(p[0], p[1]) for p in raw])
 
 
 def _check_merged(source: str, user_text: str, merged: Mapping[str, Any]) -> None:
@@ -229,6 +266,8 @@ def _merge(base: Mapping[str, Any], over: Mapping[str, Any]) -> dict[str, Any]:
             out[key] = over[key]
         elif key == "anchors":
             out[key] = over[key]  # a curve is replaced whole, never mixed point by point
+        elif key == "curves":
+            out[key] = {**base[key], **over[key]}  # likewise, one factor's curve at a time
         elif isinstance(base[key], dict) and isinstance(over[key], dict):
             out[key] = _merge(base[key], over[key])
         else:
@@ -248,17 +287,24 @@ def _parse(source: str, text: str) -> dict[str, Any]:
         raise ProfileError(source, int(m.group(1)) if m else None, f"invalid TOML: {e}") from e
 
 
+def _curve_from_anchors(anchors: Mapping[str, Any]) -> Curve:
+    return tuple(sorted((float(k), float(v)) for k, v in anchors.items()))
+
+
 def _build(merged: Mapping[str, Any]) -> Profile:
     canonical = json.dumps(merged, sort_keys=True, separators=(",", ":")).encode()
-    anchors = tuple(
-        sorted((float(k), float(v)) for k, v in merged["bitrate"]["mp3"]["anchors"].items())
-    )
+    bitrate = merged["bitrate"]
     return Profile(
         name=merged["name"],
         version=merged["version"],
         objectives={k: float(v) for k, v in merged["objectives"].items()},
         factors={k: float(v) for k, v in merged["factors"].items()},
-        mp3_bitrate_anchors=anchors,
+        mp3_bitrate_anchors=_curve_from_anchors(bitrate["mp3"]["anchors"]),
+        vorbis_bitrate_anchors=_curve_from_anchors(bitrate["vorbis"]["anchors"]),
+        curves={
+            k: tuple(sorted((float(x), float(y)) for x, y in v))
+            for k, v in merged["curves"].items()
+        },
         gates={k: float(v) for k, v in merged["gates"].items()},
         ratings={k: float(v) for k, v in merged["ratings"].items()},
         content_hash=hashlib.sha256(canonical).hexdigest(),

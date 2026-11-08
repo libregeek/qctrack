@@ -50,6 +50,8 @@ Run from source: `PYTHONPATH=src python3 -m qctrack ...`
   Test: `scan --json`, then `rescore --profile other.toml` gives new scores with no audio access (works after temporarily renaming the sample).
 
 ## M4 CLI, workers, cache
+- [~] **4.0 Factor scoring (measurements to factor scores).** `core/factors.py`: `TrackMeasurements` and `factor_results(m, profile)` for MP3 and Ogg Vorbis. The profile gained a `[curves]` table (value-to-score points per numeric factor) and `[bitrate.vorbis]`; categorical factors follow the matrix verdicts. Factors with no measurement yet (F1.09 and other Info factors, F2.11, F2.13, F3.04, F3.05, F3.10), Vorbis F1.05/F1.06/F1.08/F3.01/F3.02 (no table), and anything the file stores nothing for (F1.06 without a LAME preset, F1.08 without a declared length) are left out and never lower coverage. Scores need no serialisation yet; `Measurement` JSON arrives with 5.2.
+  Test: `python3 -m pytest tests/test_factors.py -v`: a clean 320 kbps MP3 scores 100 (A); a "320" file cut off at 16 kHz gets G4 and D; a truncated one gets G2 and F; `--quick`-style input is Provisional. The curve numbers in `qctrack profile show-default` are starting values for you to review.
 - [ ] **4.1 `scan` on files/folders, screen output and summary.**
   Test: `qctrack scan ~/Lab/samples` shows one line per file and a summary.
 - [ ] **4.2 Exit codes and `--fail-below`.**
