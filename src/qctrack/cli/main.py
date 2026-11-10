@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import shutil
 import sys
@@ -407,12 +408,15 @@ def _from_cache(
     quick: bool,
     profile: Profile,
     reports: dict[int, TrackReport],
+    spectrograms: bool = False,
 ) -> list[tuple[int, tuple[str, int, int] | None]]:
     """Fill ``reports`` from the cache; return the (file index, cache key) still to analyse."""
     todo: list[tuple[int, tuple[str, int, int] | None]] = []
     for i, path in enumerate(files):
-        hit = cache.get(path, quick) if cache is not None else None
+        hit = cache.get(path, quick, spectrograms) if cache is not None else None
         if hit is not None:
+            if not spectrograms and hit.measurements is not None:
+                hit.measurements.spectrogram = None  # not asked for: keep reports small
             reports[i] = score_measured(hit, profile)
         else:
             todo.append((i, file_key(path) if cache is not None else None))
@@ -457,6 +461,16 @@ def _scan(args: argparse.Namespace) -> int:
     except ProfileError as e:
         print(f"qctrack: {e}", file=sys.stderr)
         return EXIT_USAGE
+    spectrograms = args.spectrograms
+    if spectrograms and args.quick:
+        print(
+            "qctrack: warning: --spectrograms needs a full scan; ignored with --quick",
+            file=sys.stderr,
+        )
+        spectrograms = False
+    if spectrograms and importlib.util.find_spec("PIL") is None:
+        print("qctrack: --spectrograms needs Pillow (install python3-pillow)", file=sys.stderr)
+        return EXIT_USAGE
     files = list(discover(args.paths, args.follow_links))
     by_index: dict[int, TrackReport] = {}
     jobs = args.jobs
@@ -467,12 +481,16 @@ def _scan(args: argparse.Namespace) -> int:
             print(f"qctrack: {jobs} worker(s), storage: {describe_storage(kinds)}", file=sys.stderr)
     cache = _open_cache(args.no_cache)
     try:
-        todo = _from_cache(cache, files, args.quick, profile, by_index)
+        todo = _from_cache(cache, files, args.quick, profile, by_index, spectrograms)
         progress = Progress(len(todo), sys.stderr)
         progress.enabled = progress.enabled and not args.silent
         try:
             with WorkerPool(
-                jobs, quick=args.quick, timeout_s=args.timeout, memory_mb=DEFAULT_MEMORY_MB
+                jobs,
+                quick=args.quick,
+                spectrograms=spectrograms,
+                timeout_s=args.timeout,
+                memory_mb=DEFAULT_MEMORY_MB,
             ) as pool:
                 for result in pool.run([files[i] for i, _ in todo], progress.update):
                     index, key = todo[result.index]
@@ -548,6 +566,14 @@ def _rescore(args: argparse.Namespace) -> int:
     except ReportFileError as e:
         print(f"qctrack: {e}", file=sys.stderr)
         return EXIT_USAGE
+    if args.spectrograms and not any(
+        t.measurements is not None and t.measurements.spectrogram for t in saved.tracks
+    ):
+        print(
+            "qctrack: warning: the report holds no spectrograms; scan with --spectrograms "
+            "and --json first",
+            file=sys.stderr,
+        )
     reports = [score_measured(m, profile) for m in saved.tracks]
     return _finish(args, reports, profile, analyzed_at=saved.analyzed_at, quick=saved.quick)
 

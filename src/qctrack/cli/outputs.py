@@ -73,6 +73,12 @@ def output_options() -> argparse.ArgumentParser:
         "--json=- writes it to standard output and turns the screen output off",
     )
     p.add_argument(
+        "--spectrograms",
+        action="store_true",
+        help="embed a spectrogram image per track in the HTML report (needs python3-pillow; "
+        "makes the scan slower and the report larger)",
+    )
+    p.add_argument(
         "-o",
         "--output-dir",
         type=Path,
@@ -127,7 +133,9 @@ def write_reports(
             "report.html",
             args,
             bom=False,
-            write=lambda f: write_html(f, reports, profile, analyzed_at=analyzed_at),
+            write=lambda f: write_html(
+                f, reports, profile, analyzed_at=analyzed_at, spectrograms=args.spectrograms
+            ),
         )
     if args.json is not None:
         _emit(

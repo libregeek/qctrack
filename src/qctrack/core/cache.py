@@ -84,8 +84,10 @@ class ResultCache:
     def close(self) -> None:
         self._db.close()
 
-    def get(self, path: Path, quick: bool) -> Measured | None:
-        """The cached measurements for ``path`` if the file is unchanged, else None."""
+    def get(self, path: Path, quick: bool, spectrogram: bool = False) -> Measured | None:
+        """The cached measurements for ``path`` if the file is unchanged, else None.
+
+        With ``spectrogram`` an entry that was decoded without a picture does not count."""
         key = file_key(path)
         if key is None:
             return None
@@ -98,7 +100,11 @@ class ResultCache:
             ).fetchone()
             if row is None:
                 return None
-            return measured_from_json(zlib.decompress(row[0]).decode(), path)
+            found = measured_from_json(zlib.decompress(row[0]).decode(), path)
+            m = found.measurements
+            if spectrogram and m is not None and m.clipping is not None and m.spectrogram is None:
+                return None
+            return found
         except (sqlite3.Error, zlib.error, ValueError):
             return None  # unreadable entry: analyse the file again and overwrite it
 

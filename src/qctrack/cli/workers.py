@@ -32,7 +32,7 @@ DEFAULT_TIMEOUT_S = 300.0
 DEFAULT_MEMORY_MB = 2048
 
 #: What a worker runs for each file. Replaced in tests to inject crashes and hangs.
-TARGET: Callable[[Path, bool], Measured] = measure_file
+TARGET: Callable[..., Measured] = measure_file
 
 
 @dataclass
@@ -44,7 +44,11 @@ class JobResult:
 
 
 def _worker_main(
-    conn: Connection, quick: bool, memory_mb: int, target: Callable[[Path, bool], Measured]
+    conn: Connection,
+    quick: bool,
+    memory_mb: int,
+    target: Callable[..., Measured],
+    spectrograms: bool = False,
 ) -> None:
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # the parent handles Ctrl-C
     try:
@@ -60,7 +64,8 @@ def _worker_main(
         if path is None:
             return
         try:
-            reply: tuple[str, Any] = ("ok", target(path, quick))
+            extra = {"spectrograms": True} if spectrograms else {}
+            reply: tuple[str, Any] = ("ok", target(path, quick, **extra))
         except MemoryError:
             reply = ("error", f"out of memory (limit {memory_mb} MB)")
         except Exception as e:  # a bug must not take the worker down with a traceback
@@ -103,6 +108,7 @@ class WorkerPool:
         jobs: int,
         *,
         quick: bool = False,
+        spectrograms: bool = False,
         timeout_s: float = DEFAULT_TIMEOUT_S,
         memory_mb: int = DEFAULT_MEMORY_MB,
     ) -> None:
@@ -112,6 +118,7 @@ class WorkerPool:
         self._ctx.set_forkserver_preload(["numpy", "qctrack.core.analyze"])
         self._jobs = max(1, jobs)
         self._quick = quick
+        self._spectrograms = spectrograms
         self._timeout = timeout_s
         self._memory_mb = memory_mb
         self._slots = [_Slot() for _ in range(self._jobs)]
@@ -140,7 +147,7 @@ class WorkerPool:
         parent, child = self._ctx.Pipe()
         proc = self._ctx.Process(
             target=_worker_main,
-            args=(child, self._quick, self._memory_mb, TARGET),
+            args=(child, self._quick, self._memory_mb, TARGET, self._spectrograms),
             daemon=True,
         )
         proc.start()

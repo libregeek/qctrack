@@ -10,6 +10,7 @@ expandable details need it.
 
 from __future__ import annotations
 
+import base64
 import json
 from collections import Counter
 from collections.abc import Sequence
@@ -24,9 +25,11 @@ from qctrack.core.analyze import TrackReport
 from qctrack.core.catalogue import FACTORS, OBJECTIVE_NAMES
 from qctrack.core.profile import OBJECTIVES, Profile
 from qctrack.core.scoring import Status, gate_legend
+from qctrack.core.spectrogram import row_fraction
 
 _TEMPLATE = "report.html.j2"
 _BINS = 10
+_TICKS_HZ = (100, 1000, 5000, 10000, 16000, 20000)
 
 
 @dataclass(frozen=True)
@@ -97,7 +100,32 @@ def _json_for_script(data: object) -> str:
     )
 
 
-def _detail(r: TrackReport) -> dict[str, Any]:
+def _spectrogram(r: TrackReport) -> dict[str, Any] | None:
+    """The picture with what the script needs to label it: the PNG as a data URI, and the
+    heights (0-1 from the bottom) of the measured cutoff and of the axis ticks."""
+    m = r.measurements
+    img = m.spectrogram if m is not None else None
+    if m is None or img is None or not img.png:
+        return None
+    out: dict[str, Any] = {
+        "src": "data:image/png;base64," + base64.b64encode(img.png).decode(),
+        "ticks": [
+            [
+                f"{hz // 1000} kHz" if hz >= 1000 else f"{hz} Hz",
+                round(row_fraction(hz, img.rate), 4),
+            ]
+            for hz in _TICKS_HZ
+            if hz < img.rate / 2
+        ],
+        "dur": _num(img.duration_s),
+    }
+    cut = next((s for s in m.spectrum if s.rate == img.rate and s.measured), None)
+    if cut is not None and cut.has_cliff:
+        out["cut"] = [round(cut.cutoff_hz), round(row_fraction(cut.cutoff_hz, img.rate), 4)]
+    return out
+
+
+def _detail(r: TrackReport, spectrograms: bool = False) -> dict[str, Any]:
     s = r.score
     m = r.measurements
     d: dict[str, Any] = {
@@ -117,6 +145,8 @@ def _detail(r: TrackReport) -> dict[str, Any]:
         d["size"] = r.size
     if r.tags.problems:
         d["tags"] = r.tags.problems
+    if spectrograms and (sg := _spectrogram(r)) is not None:
+        d["sg"] = sg
     return d
 
 
@@ -153,8 +183,9 @@ def write_html(
     profile: Profile,
     *,
     analyzed_at: str,
+    spectrograms: bool = False,
 ) -> None:
-    """Write the whole report to ``out``."""
+    """Write the whole report to ``out``. Pictures are embedded only with ``spectrograms``."""
     rows = [_row(i, r) for i, r in enumerate(reports)]
     ratings: Counter[str] = Counter(r.score.rating for r in reports if r.score.rating)
     status: Counter[Status] = Counter(r.score.status for r in reports)
@@ -165,7 +196,7 @@ def write_html(
     data = {
         "objectives": [[o, OBJECTIVE_NAMES[o], profile.objectives[o]] for o in OBJECTIVES],
         "factors": {f: [*FACTORS[f], weights.get(f, 0)] for f in FACTORS},
-        "tracks": [_detail(r) for r in reports],
+        "tracks": [_detail(r, spectrograms) for r in reports],
     }
     html = (
         _environment()

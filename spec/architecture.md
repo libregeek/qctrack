@@ -48,8 +48,8 @@ qctrack/
 | Package | Responsibility | Depends on |
 | --- | --- | --- |
 | `qctrack.native` | `ctypes` signatures and small wrappers that always free their handles | Native libraries |
-| `qctrack.core` | Format detection, passes 1–3, factors, profiles, scoring. No terminal or process code, so a later GUI can reuse it (REQ-PLT-02). | `native`, NumPy, Mutagen |
-| `qctrack.report` | Report writers | `core`, Jinja2, Pillow |
+| `qctrack.core` | Format detection, passes 1–3, factors, profiles, scoring. No terminal or process code, so a later GUI can reuse it (REQ-PLT-02). | `native`, NumPy, Mutagen, Pillow (only to draw the spectrogram, imported on demand) |
+| `qctrack.report` | Report writers | `core`, Jinja2 |
 | `qctrack.cli` | Arguments, file discovery, worker pool, cache, progress, exit codes | `core`, `report`, tqdm |
 
 ## 4. Runtime design

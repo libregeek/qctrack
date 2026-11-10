@@ -27,6 +27,7 @@ from qctrack.core.scoring import (
     score_track,
     unsupported_score,
 )
+from qctrack.core.spectrogram import SpectrogramAnalyzer
 from qctrack.core.spectrum import SpectrumAnalyzer
 from qctrack.core.tags import TagInfo, read_tags
 from qctrack.native.mpg123 import Mpg123Decoder, Mpg123Error
@@ -73,7 +74,7 @@ class TrackReport:
         )
 
 
-def measure_file(path: Path, quick: bool = False) -> Measured:
+def measure_file(path: Path, quick: bool = False, spectrograms: bool = False) -> Measured:
     """Passes 1 and 2 for one file. Never raises for a bad file: ``error`` is set instead."""
     out = Measured(path)
     try:
@@ -89,7 +90,7 @@ def measure_file(path: Path, quick: bool = False) -> Measured:
         else:
             m.ogg = scan_ogg(path)
         if not quick:
-            _decode(path, m)
+            _decode(path, m, spectrograms)
         out.measurements = m
     except OSError as e:
         out.error = e.strerror or str(e)
@@ -124,11 +125,12 @@ def analyze_file(path: Path, profile: Profile, quick: bool = False) -> TrackRepo
 class _Sinks:
     """Every analyser that sees each decoded block."""
 
-    def __init__(self, rate: int) -> None:
+    def __init__(self, rate: int, spectrograms: bool = False) -> None:
         self.clipping = ClippingAnalyzer()
         self.channels = ChannelAnalyzer()
         self.loudness = LoudnessAnalyzer(rate)
         self.spectrum = SpectrumAnalyzer(rate)
+        self.spectrogram = SpectrogramAnalyzer(rate) if spectrograms else None
         self._rate = rate
 
     def feed(self, block: Block, rate: int) -> None:
@@ -138,13 +140,15 @@ class _Sinks:
         self.channels.feed(block)
         self.loudness.feed(block, change)
         self.spectrum.feed(block, change)
+        if self.spectrogram is not None:
+            self.spectrogram.feed(block, change)
 
 
-def _decode(path: Path, m: TrackMeasurements) -> None:
+def _decode(path: Path, m: TrackMeasurements, spectrograms: bool) -> None:
     if m.mp3 is not None:
-        _decode_mp3(path, m, m.mp3)
+        _decode_mp3(path, m, m.mp3, spectrograms)
     elif m.ogg is not None:
-        _decode_ogg(path, m, m.ogg)
+        _decode_ogg(path, m, m.ogg, spectrograms)
 
 
 def _finish(m: TrackMeasurements, sinks: _Sinks | None, errors: DecodeErrors) -> None:
@@ -154,9 +158,11 @@ def _finish(m: TrackMeasurements, sinks: _Sinks | None, errors: DecodeErrors) ->
         m.channels = sinks.channels.results()
         m.loudness = sinks.loudness.results()
         m.spectrum = sinks.spectrum.results()
+        if sinks.spectrogram is not None:
+            m.spectrogram = sinks.spectrogram.result()
 
 
-def _decode_mp3(path: Path, m: TrackMeasurements, scan: Mp3Scan) -> None:
+def _decode_mp3(path: Path, m: TrackMeasurements, scan: Mp3Scan, spectrograms: bool) -> None:
     sinks: _Sinks | None = None
     fatal: str | None = None
     try:
@@ -164,7 +170,7 @@ def _decode_mp3(path: Path, m: TrackMeasurements, scan: Mp3Scan) -> None:
             try:
                 for block in d.blocks():
                     if sinks is None:
-                        sinks = _Sinks(d.rate)
+                        sinks = _Sinks(d.rate, spectrograms)
                     sinks.feed(block, d.rate)
             except Mpg123Error as e:
                 fatal = str(e)
@@ -174,7 +180,7 @@ def _decode_mp3(path: Path, m: TrackMeasurements, scan: Mp3Scan) -> None:
     _finish(m, sinks, errors)
 
 
-def _decode_ogg(path: Path, m: TrackMeasurements, scan: OggScan) -> None:
+def _decode_ogg(path: Path, m: TrackMeasurements, scan: OggScan, spectrograms: bool) -> None:
     sinks: _Sinks | None = None
     fatal: str | None = None
     try:
@@ -182,7 +188,7 @@ def _decode_ogg(path: Path, m: TrackMeasurements, scan: OggScan) -> None:
             try:
                 for block in d.blocks():
                     if sinks is None:
-                        sinks = _Sinks(d.rate)
+                        sinks = _Sinks(d.rate, spectrograms)
                     sinks.feed(block, d.rate)
             except VorbisError as e:
                 fatal = str(e)

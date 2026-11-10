@@ -64,6 +64,12 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
 .ftable td, .ftable th { padding: 5px 8px; }
 .v-Pass { color: #0b5d1e; font-weight: 600; } .v-Warn { color: #6b4e00; font-weight: 600; }
 .v-Fail { color: #8c1d1d; font-weight: 600; }
+.sg { margin: 0 0 12px; }
+.sg .plot { position: relative; margin-left: 52px; max-width: 640px; }
+.sg img { display: block; width: 100%; height: 200px; image-rendering: auto; border: 1px solid var(--line); background: #000; }
+.sg .tick { position: absolute; left: -52px; width: 48px; text-align: right; font-size: 11px; color: var(--ink-2); transform: translateY(50%); }
+.sg .cut { position: absolute; left: 0; right: 0; border-top: 1px dashed #5ee6e6; pointer-events: none; }
+.sg .cut span { position: absolute; right: 4px; top: -17px; font-size: 11px; background: rgba(0,0,0,.7); color: #fff; padding: 0 4px; border-radius: 3px; }
 .note { color: var(--ink-2); font-size: 13px; margin: 6px 0 0; }
 .noscript { color: var(--ink-2); font-size: 13px; }
 [hidden] { display: none !important; }
@@ -191,6 +197,29 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
     rows.forEach(function (r) { r.firstChild.firstChild.setAttribute("aria-expanded", "false"); });
   }
 
+  function buildSpectrogram(sg) {
+    var fig = el("div", "sg");
+    fig.appendChild(el("h3", null, "Spectrogram (log frequency, " + sg.dur + " s)"));
+    var plot = el("div", "plot");
+    var img = el("img");
+    img.src = sg.src;
+    img.alt = "Spectrogram: time left to right, frequency bottom to top";
+    plot.appendChild(img);
+    sg.ticks.forEach(function (k) {
+      var tk = el("span", "tick", k[0]);
+      tk.style.bottom = (k[1] * 100) + "%";
+      plot.appendChild(tk);
+    });
+    if (sg.cut) {
+      var line = el("div", "cut");
+      line.style.bottom = (sg.cut[1] * 100) + "%";
+      line.appendChild(el("span", null, "cutoff " + (sg.cut[0] / 1000).toFixed(1) + " kHz"));
+      plot.appendChild(line);
+    }
+    fig.appendChild(plot);
+    return fig;
+  }
+
   function buildDetail(i) {
     var t = data.tracks[i];
     var box = el("div");
@@ -208,6 +237,7 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
     box.appendChild(el("p", "note", facts.join(" · ")));
     box.appendChild(objs);
     if (t.tags) box.appendChild(el("p", "note", "Tag problems: " + t.tags.join("; ")));
+    if (t.sg) box.appendChild(buildSpectrogram(t.sg));
     if (t.f.length) {
       var tbl = el("table", "ftable");
       var head = el("tr");

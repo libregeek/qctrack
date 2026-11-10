@@ -36,6 +36,7 @@ from qctrack.core.scoring import (
     score_verdict,
     verdict_for_score,
 )
+from qctrack.core.spectrogram import Spectrogram
 from qctrack.core.spectrum import SpectrumResult
 
 _ORDER = {Verdict.PASS: 0, Verdict.WARN: 1, Verdict.FAIL: 2}
@@ -59,6 +60,8 @@ class TrackMeasurements:
     channels: list[ChannelResult] = field(default_factory=list)
     loudness: list[LoudnessResult] = field(default_factory=list)
     spectrum: list[SpectrumResult] = field(default_factory=list)
+    #: Picture for the HTML report, only when asked for (``--spectrograms``).
+    spectrogram: Spectrogram | None = None
 
     @property
     def duration_s(self) -> float | None:
