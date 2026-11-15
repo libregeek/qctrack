@@ -36,6 +36,10 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 
+# One-off analysis scripts: print formatting and long report lines are fine there.
+[tool.ruff.lint.per-file-ignores]
+"tools/**" = ["UP031", "E501", "B023"]
+
 # Mutagen ships no type hints; tests build tags with it directly.
 [[tool.mypy.overrides]]
 module = ["qctrack.core.tags", "test_tags", "test_mp3scan"]

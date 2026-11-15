@@ -1,0 +1,20 @@
+# Golden-test profile: different weights, a lower G4 cap and tighter rating bands.
+name = "strict"
+version = "2.0"
+
+[objectives]
+O1 = 10
+O2 = 30
+O3 = 60
+
+[factors]
+"F2.08" = 12
+
+[gates]
+G4_cap = 49
+
+[ratings]
+A = 95
+B = 85
+C = 70
+D = 50

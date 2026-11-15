@@ -165,3 +165,33 @@ def test_mp3_samples_match_mutagen(name: str) -> None:
     assert t.title == str(ref["TIT2"]) and t.artist == " / ".join(ref["TPE1"].text)
     assert t.album == str(ref["TALB"]) and t.problems == []
     assert t.pictures == len(ref.getall("APIC"))
+
+
+def test_a_parser_exception_on_a_damaged_tag_is_reported_not_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fuzzing found Mutagen raising IndexError on a damaged Vorbis comment header (todo 6.2).
+    Whatever Mutagen raises, the tag becomes a malformed-tag note and the scan carries on."""
+
+    def broken(*args: object, **kwargs: object) -> None:
+        raise IndexError("bytearray index out of range")
+
+    import qctrack.core.tags as tags_module
+
+    monkeypatch.setattr(tags_module, "OggVorbis", broken)
+    monkeypatch.setattr(tags_module, "ID3", broken)
+    monkeypatch.setattr(tags_module, "APEv2", broken)
+
+    ogg = tmp_path / "t.ogg"
+    _ogg_with_comments(ogg, [b"TITLE=One"])
+    t = read_tags(ogg, Format.VORBIS)
+    assert t.malformed and "could not be read" in t.malformed[0]
+
+    p = mp3(tmp_path)
+    ape = APEv2()
+    ape["Title"] = "x"
+    ape.save(p)
+    p.write_bytes(p.read_bytes() + b"TAG" + b"\0" * 125)  # an ID3v1 tag after the APE tag
+    t = read_tags(p, Format.MP3)
+    assert any("ID3 tag could not be read" in m for m in t.malformed)
+    assert any("APEv2 tag could not be read" in m for m in t.malformed)

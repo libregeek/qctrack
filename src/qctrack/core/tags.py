@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import mutagen
 from mutagen.apev2 import APEv2
 from mutagen.id3 import ID3
 from mutagen.oggvorbis import OggVorbis
@@ -145,14 +144,14 @@ def _read_mp3(path: str | Path, info: TagInfo) -> None:
     if versions or has_v1:
         try:
             tag = ID3(path)
-        except mutagen.MutagenError as e:
+        except Exception as e:  # Mutagen leaks IndexError, struct.error etc. on damaged tags
             info.malformed.append(f"ID3 tag could not be read ({e})")
         else:
             _from_id3(tag, info)
     if has_ape:
         try:
             ape = APEv2(path)
-        except mutagen.MutagenError as e:
+        except Exception as e:  # as above
             info.malformed.append(f"APEv2 tag could not be read ({e})")
         else:
             _from_ape(ape, info)
@@ -214,7 +213,7 @@ def _read_vorbis(path: str | Path, info: TagInfo) -> None:
     info.formats = ["Vorbis comments"]
     try:
         ogg: Any = OggVorbis(path)
-    except mutagen.MutagenError as e:
+    except Exception as e:  # as above: a damaged comment header can raise IndexError
         info.malformed.append(f"Vorbis comments could not be read ({e})")
         return
     tags = ogg.tags

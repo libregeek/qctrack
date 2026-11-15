@@ -260,7 +260,9 @@ def _check_merged(source: str, user_text: str, merged: Mapping[str, Any]) -> Non
 
 def _merge(base: Mapping[str, Any], over: Mapping[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
-    for key in base.keys() | over.keys():
+    # Base order first, then keys only the override has: a set union here would make the
+    # order (and so the saved report) change from run to run.
+    for key in [*base, *(k for k in over if k not in base)]:
         if key not in over:
             out[key] = base[key]
         elif key not in base:

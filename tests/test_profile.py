@@ -123,3 +123,10 @@ def test_a_curve_override_replaces_that_factor_only(tmp_path: Path) -> None:
     d = load_default()
     assert p.curves["F2.07"] == ((0, 100), (2, 0))
     assert p.curves["F2.06"] == d.curves["F2.06"]
+
+
+def test_merged_profile_keeps_the_default_key_order(tmp_path: Path) -> None:
+    """A set union in the merge once made the saved report's key order change between runs."""
+    p = load_profile(write(tmp_path, '[objectives]\nO3 = 60\n[factors]\n"F2.08" = 12\n'))
+    assert list(p.objectives) == list(load_default().objectives)
+    assert list(p.factors) == list(load_default().factors)
