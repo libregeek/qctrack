@@ -446,7 +446,7 @@ All drafting and approval tasks (T01–T09, T13–T16) are done and the baseline
 | T09 | Choose the project license and approve dependency licensing (Q1) | Product owner |  | Done |
 | T15 | Choose the final project name and check it is free (Q12) | Product owner |  | Done |
 | T16 | Approve CLI commands, options and profile file format (4.4, 5.6, Q11) | Product owner | T14 | Done |
-| T10 | Assemble labelled test corpus: genuine and transcoded MP3 and Vorbis files | Team | T05 | Not started |
+| T10 | Assemble labelled test corpus: genuine and transcoded MP3 and Vorbis files. Include source/encode pairs at several bitrates so codec true-peak overshoot can be measured and the F2.08 curve settled (Q-A10; see `accuracy-findings.md`) | Team | T05 | Not started |
 | T11 | Build MP3 and Vorbis cutoff-to-quality tables from reference encodes | Team | T10 | Not started |
 | T12 | Confirm performance targets on reference Linux machines | Team | T08 | Not started |
 | T13 | Sign off requirements baseline v1.0 (gate to architecture) | Product owner | T05–T09, T15, T16 | Done |
