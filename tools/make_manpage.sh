@@ -5,4 +5,5 @@ cd "$(dirname "$0")/.."
 PYTHONPATH=src argparse-manpage --pyfile src/qctrack/cli/main.py --function build_parser \
   --prog qctrack --project-name qctrack --version "$(PYTHONPATH=src python3 -c 'import qctrack; print(qctrack.__version__)')" \
   --description "audio quality scoring and fake-bitrate detection" \
+  --author libregeek \
   --manual-title "qctrack" --include man/qctrack.include --output man/qctrack.1

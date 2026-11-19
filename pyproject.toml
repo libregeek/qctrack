@@ -9,6 +9,7 @@ description = "Audio quality scoring and fake-bitrate detection"
 readme = "README.md"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
+authors = [{ name = "libregeek" }]
 requires-python = ">=3.11"
 dependencies = ["numpy", "mutagen", "jinja2", "tqdm", "cattrs"]
 

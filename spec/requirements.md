@@ -1,6 +1,6 @@
 # qctrack Requirements
 
-Nov 1, 2026 · @Sasikala
+Nov 1, 2026 · libregeek
 
 ## 1. Purpose and scope
 
