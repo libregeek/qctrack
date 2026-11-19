@@ -1,0 +1,257 @@
+.TH QCTRACK "1" "2026\-11\-19" "qctrack 0.1.0" "qctrack"
+.SH NAME
+qctrack \- audio quality scoring and fake\-bitrate detection
+.SH SYNOPSIS
+.B qctrack
+[-h] [--version] {scan,rescore,profile} ...
+.SH DESCRIPTION
+Audio quality scoring and fake\-bitrate detection.
+
+.SH
+POSITIONAL ARGUMENTS
+.TP
+\fBqctrack\fR \fI\,scan\/\fR
+analyse files and folders
+.TP
+\fBqctrack\fR \fI\,rescore\/\fR
+score a saved report.json again with another profile, without the audio
+.TP
+\fBqctrack\fR \fI\,profile\/\fR
+scoring profiles
+
+.SH COMMAND \fI\,'qctrack scan'\/\fR
+usage: qctrack scan [\-h] [\-\-fail\-below SCORE] [\-\-color {auto,always,never}]
+                    [\-\-csv [FILE]] [\-\-csv\-values] [\-\-csv\-bom] [\-\-html [FILE]]
+                    [\-\-json [FILE]] [\-\-spectrograms] [\-o DIR] [\-\-silent]
+                    [\-\-profile PROFILE] [\-v] [\-\-quick] [\-j N]
+                    [\-\-timeout SECONDS] [\-\-no\-cache] [\-\-follow\-links]
+                    paths [paths ...]
+
+.TP
+\fBpaths\fR
+files and folders (recursive)
+
+.SH OPTIONS \fI\,'qctrack scan'\/\fR
+.TP
+\fB\-\-fail\-below\fR \fI\,SCORE\/\fR
+exit with code 4 if any track scores below SCORE (0\-100)
+
+.TP
+\fB\-\-color\fR \fI\,{auto,always,never}\/\fR
+colour output; auto = on for a terminal unless NO_COLOR is set (default)
+
+.TP
+\fB\-\-csv\fR \fI\,[FILE]\/\fR
+also write a CSV report (default report.csv); \-\-csv=\- writes it to standard
+output and turns the screen output off
+
+.TP
+\fB\-\-csv\-values\fR
+add a measured\-value column next to each factor score in the CSV
+
+.TP
+\fB\-\-csv\-bom\fR
+start the CSV file with a UTF\-8 byte\-order mark
+
+.TP
+\fB\-\-html\fR \fI\,[FILE]\/\fR
+also write a self\-contained HTML report (default report.html); \-\-html=\- writes
+it to standard output and turns the screen output off
+
+.TP
+\fB\-\-json\fR \fI\,[FILE]\/\fR
+also write a JSON report with every measurement and score (default
+report.json); \-\-json=\- writes it to standard output and turns the screen
+output off
+
+.TP
+\fB\-\-spectrograms\fR
+embed a spectrogram image per track in the HTML report (needs python3\-pillow;
+makes the scan slower and the report larger)
+
+.TP
+\fB\-o\fR \fI\,DIR\/\fR, \fB\-\-output\-dir\fR \fI\,DIR\/\fR
+folder for report files with default names (default: current folder)
+
+.TP
+\fB\-\-silent\fR
+no results or progress on the terminal
+
+.TP
+\fB\-\-profile\fR \fI\,PROFILE\/\fR
+scoring profile (default: user or bundled)
+
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+show measurements
+
+.TP
+\fB\-\-quick\fR
+header\-only scan (pass 1)
+
+.TP
+\fB\-j\fR \fI\,N\/\fR, \fB\-\-jobs\fR \fI\,N\/\fR
+parallel workers (default: one per CPU core on SSDs, two on spinning disks and
+network shares)
+
+.TP
+\fB\-\-timeout\fR \fI\,SECONDS\/\fR
+time budget per file (default 300); a slower file is an Error
+
+.TP
+\fB\-\-no\-cache\fR
+ignore and do not update the result cache
+
+.TP
+\fB\-\-follow\-links\fR
+follow symbolic links to folders
+
+.SH COMMAND \fI\,'qctrack rescore'\/\fR
+usage: qctrack rescore [\-h] [\-\-fail\-below SCORE] [\-\-color {auto,always,never}]
+                       [\-\-csv [FILE]] [\-\-csv\-values] [\-\-csv\-bom]
+                       [\-\-html [FILE]] [\-\-json [FILE]] [\-\-spectrograms]
+                       [\-o DIR] [\-\-silent] [\-\-profile PROFILE] [\-v]
+                       [file]
+
+.TP
+\fBfile\fR
+report.json to read (default: report.json in the output folder)
+
+.SH OPTIONS \fI\,'qctrack rescore'\/\fR
+.TP
+\fB\-\-fail\-below\fR \fI\,SCORE\/\fR
+exit with code 4 if any track scores below SCORE (0\-100)
+
+.TP
+\fB\-\-color\fR \fI\,{auto,always,never}\/\fR
+colour output; auto = on for a terminal unless NO_COLOR is set (default)
+
+.TP
+\fB\-\-csv\fR \fI\,[FILE]\/\fR
+also write a CSV report (default report.csv); \-\-csv=\- writes it to standard
+output and turns the screen output off
+
+.TP
+\fB\-\-csv\-values\fR
+add a measured\-value column next to each factor score in the CSV
+
+.TP
+\fB\-\-csv\-bom\fR
+start the CSV file with a UTF\-8 byte\-order mark
+
+.TP
+\fB\-\-html\fR \fI\,[FILE]\/\fR
+also write a self\-contained HTML report (default report.html); \-\-html=\- writes
+it to standard output and turns the screen output off
+
+.TP
+\fB\-\-json\fR \fI\,[FILE]\/\fR
+also write a JSON report with every measurement and score (default
+report.json); \-\-json=\- writes it to standard output and turns the screen
+output off
+
+.TP
+\fB\-\-spectrograms\fR
+embed a spectrogram image per track in the HTML report (needs python3\-pillow;
+makes the scan slower and the report larger)
+
+.TP
+\fB\-o\fR \fI\,DIR\/\fR, \fB\-\-output\-dir\fR \fI\,DIR\/\fR
+folder for report files with default names (default: current folder)
+
+.TP
+\fB\-\-silent\fR
+no results or progress on the terminal
+
+.TP
+\fB\-\-profile\fR \fI\,PROFILE\/\fR
+scoring profile (default: user or bundled)
+
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+show measurements
+
+.SH COMMAND \fI\,'qctrack profile'\/\fR
+usage: qctrack profile [\-h] {show\-default,validate} ...
+
+.SH
+POSITIONAL ARGUMENTS \fI\,'qctrack profile'\/\fR
+.TP
+\fBqctrack profile\fR \fI\,show\-default\/\fR
+print the default profile
+.TP
+\fBqctrack profile\fR \fI\,validate\/\fR
+check a profile file
+
+.SH COMMAND \fI\,'qctrack profile show\-default'\/\fR
+usage: qctrack profile show\-default [\-h]
+
+.SH COMMAND \fI\,'qctrack profile validate'\/\fR
+usage: qctrack profile validate [\-h] file
+
+.TP
+\fBfile\fR
+profile to check
+
+.SH OPTIONS
+.TP
+\fB\-\-version\fR
+show program's version number and exit
+.SH EXIT STATUS
+.TP
+.B 0
+All files were analysed.
+.TP
+.B 1
+Some files were Error or Unsupported.
+.TP
+.B 2
+Usage error or invalid profile.
+.TP
+.B 3
+Fatal error, such as an unwritable output file.
+.TP
+.B 4
+\fB\-\-fail\-below\fR was given and a track scored below the limit.
+.SH ENVIRONMENT
+.TP
+.B NO_COLOR
+If set, colour output is off when \fB\-\-color\fR is \fBauto\fR.
+.TP
+.B XDG_CONFIG_HOME
+Base folder of the user profile (default \fI~/.config\fR).
+.TP
+.B XDG_DATA_HOME
+Base folder of the result cache (default \fI~/.local/share\fR).
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/qctrack/profile.toml
+User scoring profile, used when \fB\-\-profile\fR is not given. Without it the bundled default profile applies.
+.TP
+.I $XDG_DATA_HOME/qctrack/cache.db
+Result cache. \fB\-\-no\-cache\fR ignores it.
+.SH EXAMPLES
+Scan a folder and write a CSV and an HTML report:
+.PP
+.RS
+.nf
+qctrack scan ~/Music \-\-csv \-\-html
+.fi
+.RE
+.PP
+Script a check that fails when any track scores below 70:
+.PP
+.RS
+.nf
+qctrack scan \-\-silent \-\-fail\-below 70 album/
+.fi
+.RE
+.PP
+Rescore saved measurements with another profile, without the audio:
+.PP
+.RS
+.nf
+qctrack scan ~/Music \-\-json
+qctrack rescore \-\-profile strict.toml
+.fi
+.RE

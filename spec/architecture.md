@@ -226,7 +226,7 @@ Jinja2 is the weakest fit for the "actively maintained" rule, with no commit sin
 | --- | --- | --- | --- | --- | --- |
 | RPM macros | `pyproject-rpm-macros` | 1.24.0 | MIT | Not checked | Building the RPM |
 | hatchling | `python3-hatchling` | 1.31.0 | MIT | Not checked | Package build backend |
-| argparse-manpage | `python3-argparse-manpage` | 4.7 | Apache-2.0 | 2026-10-14 | Man page (REQ-CLI-13) |
+| argparse-manpage | `argparse-manpage` (command) and `python3-argparse-manpage` (library) | 4.7 | Apache-2.0 | 2026-10-14 | Man page (REQ-CLI-13); the command comes from the `argparse-manpage` package. Run `tools/make_manpage.sh` to rebuild `man/qctrack.1` (checked in; extra sections in `man/qctrack.include`) |
 | pytest | `python3-pytest` | 8.4.2 | MIT | 2026-10-30 | Tests |
 | Chromium (optional) | `chromium` | 156.0.8078.79 | BSD-3-Clause and others (per Fedora) | Fedora build current | Runs the HTML report's script in a headless browser in `tests/test_html.py`; the test is skipped if it is not installed |
 | Hypothesis | `python3-hypothesis` | 6.123.0 | MPL-2.0 | 2026-10-30 | Scoring and parser properties, fuzz-style input |

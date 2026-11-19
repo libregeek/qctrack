@@ -1,0 +1,61 @@
+[exit status]
+.TP
+.B 0
+All files were analysed.
+.TP
+.B 1
+Some files were Error or Unsupported.
+.TP
+.B 2
+Usage error or invalid profile.
+.TP
+.B 3
+Fatal error, such as an unwritable output file.
+.TP
+.B 4
+\fB\-\-fail\-below\fR was given and a track scored below the limit.
+
+[environment]
+.TP
+.B NO_COLOR
+If set, colour output is off when \fB\-\-color\fR is \fBauto\fR.
+.TP
+.B XDG_CONFIG_HOME
+Base folder of the user profile (default \fI~/.config\fR).
+.TP
+.B XDG_DATA_HOME
+Base folder of the result cache (default \fI~/.local/share\fR).
+
+[files]
+.TP
+.I $XDG_CONFIG_HOME/qctrack/profile.toml
+User scoring profile, used when \fB\-\-profile\fR is not given. Without it the bundled default profile applies.
+.TP
+.I $XDG_DATA_HOME/qctrack/cache.db
+Result cache. \fB\-\-no\-cache\fR ignores it.
+
+[examples]
+Scan a folder and write a CSV and an HTML report:
+.PP
+.RS
+.nf
+qctrack scan ~/Music \-\-csv \-\-html
+.fi
+.RE
+.PP
+Script a check that fails when any track scores below 70:
+.PP
+.RS
+.nf
+qctrack scan \-\-silent \-\-fail\-below 70 album/
+.fi
+.RE
+.PP
+Rescore saved measurements with another profile, without the audio:
+.PP
+.RS
+.nf
+qctrack scan ~/Music \-\-json
+qctrack rescore \-\-profile strict.toml
+.fi
+.RE
