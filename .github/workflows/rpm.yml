@@ -1,0 +1,96 @@
+name: RPM
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rpm:
+    name: Fedora ${{ matrix.release }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The active Fedora releases. Edit when a release ships or reaches end of life.
+        release: [43, 44, 45]
+    container: fedora:${{ matrix.release }}
+    steps:
+      - name: Build tools
+        run: dnf install -y rpm-build rpmdevtools dnf-plugins-core git tar gzip
+
+      - uses: actions/checkout@v4
+
+      - name: Spec and package versions agree
+        run: |
+          py=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          spec=$(rpmspec -q --qf '%{version}\n' qctrack.spec | head -1)
+          test "$py" = "$spec" || { echo "pyproject $py, spec $spec"; exit 1; }
+
+      - name: Source tarball
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          rpmdev-setuptree
+          v=$(rpmspec -q --qf '%{version}\n' qctrack.spec | head -1)
+          git archive --prefix="qctrack-$v/" -o ~/rpmbuild/SOURCES/"qctrack-$v.tar.gz" HEAD
+          cp qctrack.spec ~/rpmbuild/SPECS/
+
+      - name: Build dependencies
+        run: dnf builddep -y ~/rpmbuild/SPECS/qctrack.spec
+
+      - name: Build
+        run: rpmbuild -ba ~/rpmbuild/SPECS/qctrack.spec
+
+      - name: Lint
+        run: |
+          dnf install -y rpmlint
+          rpmlint ~/rpmbuild/RPMS/noarch/*.rpm || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qctrack-fedora-${{ matrix.release }}
+          path: |
+            ~/rpmbuild/RPMS/noarch/*.rpm
+            ~/rpmbuild/SRPMS/*.rpm
+
+  # Install the RPM on a clean Fedora and run a scan (todo 6.4).
+  install:
+    name: Install on Fedora ${{ matrix.release }}
+    needs: rpm
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        release: [43, 44, 45]
+    container: fedora:${{ matrix.release }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: qctrack-fedora-${{ matrix.release }}
+          path: pkg
+
+      - name: Install the RPM
+        run: dnf install -y $(find pkg -name 'qctrack-*.noarch.rpm')
+
+      - name: Scan a generated Ogg Vorbis file
+        run: |
+          dnf install -y vorbis-tools man-db
+          python3 - <<'PY'
+          import math, struct, wave
+          with wave.open("tone.wav", "wb") as w:
+              w.setnchannels(2); w.setsampwidth(2); w.setframerate(44100)
+              w.writeframes(b"".join(
+                  struct.pack("<hh", *(int(8000 * math.sin(2 * math.pi * f * n / 44100)) for f in (440, 660)))
+                  for n in range(44100 * 5)))
+          PY
+          oggenc -q 6 -o tone.ogg tone.wav
+          qctrack --version
+          qctrack scan --no-cache -v tone.ogg
+          qctrack scan --no-cache --silent --json=out.json tone.ogg
+          test -s out.json
+          MANWIDTH=80 man qctrack | head -5
