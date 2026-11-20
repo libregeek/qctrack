@@ -18,6 +18,7 @@ Numeric factors use the profile's curves; categorical ones follow the matrix ver
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -336,8 +337,13 @@ def _pcm_factors(m: TrackMeasurements, profile: Profile) -> list[FactorResult]:
         if lufs:  # silence has no integrated loudness: left out
             loud = max(lufs)
             out.append(_numeric("F2.09", loud, c["F2.09"], f"{loud:.1f} LUFS"))
-        lra = min(r.lra_lu for r in m.loudness)
-        out.append(_numeric("F2.10", lra, c["F2.10"], f"LRA {lra:.1f} LU"))
+        # F2.10 scores the peak-to-loudness ratio: how hard the master is limited. The
+        # loudness range is reported only: it is low by design in some genres and reads
+        # near 0 on short or steady tracks (H7).
+        plrs = [(r.plr_db, r.lra_lu) for r in m.loudness if math.isfinite(r.plr_db)]
+        if plrs:
+            plr, lra = min(plrs)
+            out.append(_numeric("F2.10", plr, c["F2.10"], f"PLR {plr:.1f} dB (LRA {lra:.1f} LU)"))
 
     if not m.channels:
         out.append(_not_evaluated("F2.12", quick))

@@ -213,8 +213,17 @@ def test_pcm_factors() -> None:
     assert r["F2.06"].verdict is Verdict.WARN
     assert r["F2.07"].verdict is Verdict.WARN
     assert r["F2.08"].verdict is Verdict.WARN and r["F2.08"].score == 50.0
-    assert r["F2.10"].verdict is Verdict.FAIL
+    assert r["F2.10"].verdict is Verdict.WARN  # PLR 0.5 - (-8.0) = 8.5 dB
+    assert r["F2.10"].detail == "PLR 8.5 dB (LRA 2.0 LU)"
     assert run(mp3(), decode_errors=DecodeErrors(concealed=9))["F2.06"].verdict is Verdict.FAIL
+
+
+def test_dynamics_from_peak_to_loudness_ratio() -> None:
+    """H7: a steady track (loudness range 0) is not a failure; a crushed master is."""
+    steady = LoudnessResult(2, 44100, 1, -3.0, -2.9, -11.6, 0.0)  # PLR 8.7
+    crushed = LoudnessResult(2, 44100, 1, -0.1, 0.4, -4.1, 6.0)  # PLR 4.5
+    assert run(mp3(), loudness=[steady])["F2.10"].score == pytest.approx(92.5)
+    assert run(mp3(), loudness=[crushed])["F2.10"].verdict is Verdict.FAIL
 
 
 @pytest.mark.parametrize(

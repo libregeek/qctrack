@@ -424,7 +424,7 @@ Audible distortion from overloaded mastering or encoding.
 - **False-verdict risk:** Medium. Loud masters clip by design; lossy decoders can overshoot 0 dBFS.
 - **Priority:** MVP
 - **Reference:** ffmpeg astats
-- **Method:** Float decode; count runs of ≥ 3 consecutive samples at |x| ≥ 0.999.
+- **Method:** Float decode; count runs of ≥ 3 consecutive samples at |x| ≥ 0.999. Known limit (finding N4): a master clipped just below full scale (for example at −0.1 dBFS) is not detected after lossy encoding, because the codec smears the flat tops and a cleanly limited master piles up near full scale in the same way. Flat-top detection at the file's own maximum is planned for FLAC (phase 2), where the samples are exact.
 - **Thresholds:** Pass: < 0.001% samples; Warn: 0.001–0.1%; Fail: > 0.1%
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
@@ -484,8 +484,8 @@ Squashed dynamics (loudness war).
 - **False-verdict risk:** Medium. Some genres are low by design.
 - **Priority:** v1
 - **Reference:** libebur128
-- **Method:** Loudness range (LRA, EBU 3342) and peak-to-loudness ratio.
-- **Thresholds:** Pass: LRA ≥ 5 LU; Warn: LRA 3–5 LU; Poor: LRA < 3 LU
+- **Method:** Peak-to-loudness ratio (PLR = true peak − integrated loudness) is scored; loudness range (LRA, EBU 3342) is reported only, because it is low by design in some genres and reads near 0 on short or steady tracks (finding H7).
+- **Thresholds:** Pass: PLR ≥ 9 dB; Warn: 7–9 dB; Fail: ≤ 5 dB (score 50 at 7 dB). In O4 Mastering since profile 2.0
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |

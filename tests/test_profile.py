@@ -126,7 +126,7 @@ def test_cli_validate_ok(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> 
 def test_default_curves_and_vorbis_bitrate() -> None:
     p = load_default()
     assert p.curves["F2.07"] == ((0.001, 100), (0.1, 50), (1, 0))
-    assert p.curves["F2.10"][0] == (1, 0)  # a rising curve: higher is better
+    assert p.curves["F2.10"][0] == (5, 0)  # PLR, a rising curve: higher is better
     assert p.vorbis_bitrate_anchors == ((64, 0), (112, 50), (160, 100))
 
 

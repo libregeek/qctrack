@@ -17,7 +17,8 @@ def good(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def fake(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """A band-limited file claiming 320 kbps: gate G4, score under 59."""
+    """A band-limited file claiming 320 kbps: gate G4; content to 12 kHz gives O3 = 0, so it
+    scores at most 70 (profile 2.0 no longer caps G4)."""
     out = tmp_path_factory.mktemp("fake") / "f.mp3"
     return encode(out, "-c:a", "libmp3lame", "-b:a", "320k", broadband=False)
 
@@ -75,8 +76,8 @@ def test_3_on_a_fatal_error(
 def test_4_when_a_track_scores_below_the_threshold(
     good: Path, fake: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["scan", "--fail-below", "70", str(good), str(fake)]) == 4
-    assert "1 track(s) scored below 70" in capsys.readouterr().err
+    assert main(["scan", "--fail-below", "75", str(good), str(fake)]) == 4
+    assert "1 track(s) scored below 75" in capsys.readouterr().err
 
 
 def test_fail_below_passes_when_every_score_reaches_it(good: Path) -> None:
