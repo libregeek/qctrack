@@ -416,7 +416,7 @@ Best-copy verdict values:
 | Verdict | Meaning | Example |
 | --- | --- | --- |
 | Best available likely | No evidence of a lower-quality source; the encode is high quality | LAME V0 of a CD; LAME 320 of a 1960s recording with a natural roll-off |
-| Better encode exists | Genuine encode, but at a low setting | Genuine LAME 128 kbps |
+| Low-bitrate encode | Genuine encode, but at a low setting | Genuine LAME 128 kbps |
 | Lossy or band-limited source | A steep wall well below the file's own encoder lowpass (F3.02 Fail with protection rules passed) | 320 kbps made from a 128 kbps file, or a label master made from a lossy file |
 
 How this removes the C1 false positive: the natural-roll-off 320 kbps example in C1 gets a Sound score that reflects its limited bandwidth through F3.01 alone (one factor, no gate), and a Best-copy verdict of "Best available likely". A real transcode gets the same lower Sound score, which is correct because it sounds like its source, and "Lossy or band-limited source".
@@ -457,7 +457,7 @@ The product owner's goal is to decide whether to prefer another copy over the on
 
 | Feature | Requirements |
 | --- | --- |
-| Replacement action per track: Replace (damaged), Replace (lossy source), Upgrade the encode, Consider another master, Keep (source-limited), Keep | Sections 4.5 (REQ-ADV), 5.9 |
+| Replacement action per track: Replace (damaged), Replace (lossy source), Replace: low bitrate, Consider another master, Keep (source-limited), Keep | Sections 4.5 (REQ-ADV), 5.9 |
 | `qctrack compare FILE FILE...`: ranks copies and names the one to keep, with "Equivalent, keep either" for ties | Sections 4.4 (REQ-CLI-14), 4.5 (REQ-CMP), 5.10 |
 | `scan --duplicates`: groups copies across the library by normalised tags and duration, then ranks each group | Sections 4.4 (REQ-CLI-15), 4.5 (REQ-DUP), 5.10 |
 

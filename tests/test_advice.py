@@ -43,7 +43,7 @@ def test_damage_comes_first() -> None:
 
 def test_low_bitrate_encode_is_upgraded() -> None:
     a = advice(mp3(average_bitrate_kbps=128.0, lame=lame(128)), spectrum=[spectrum(17000.0)])
-    assert a.best_copy is BestCopy.BETTER_ENCODE and a.action is Action.UPGRADE
+    assert a.best_copy is BestCopy.LOW_BITRATE and a.action is Action.REPLACE_LOW_BITRATE
     assert "128 kbps avg" in a.reason
 
 

@@ -354,10 +354,10 @@ def _print_table(reports: Sequence[TrackReport], paint: Painter) -> None:
             return paint(text, "red") if tone == "error" else paint(text, "cyan")
         if col == _GATES:
             return paint(text, "yellow")
+        if col == _ACTION and text in ("Replace: low bitrate", "Consider another master"):
+            return paint(text, "yellow")  # the least urgent actions
         if col == _ACTION and text.startswith("Replace"):
             return paint(text, "red")
-        if col == _ACTION and text in ("Upgrade the encode", "Consider another master"):
-            return paint(text, "yellow")
         if col == _NOTES:
             return paint(text, "dim")
         return text

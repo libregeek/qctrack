@@ -141,8 +141,8 @@ def test_numbers_use_a_dot_and_timestamps_are_iso_with_zone(
     assert row["profile"] == "default@2.0"
     # a.mp3 in this library is a genuine 192 kbps encode.
     assert (row["best_copy"], row["action"], row["action_reason"]) == (
-        "Better encode exists",
-        "Upgrade the encode",
+        "Low-bitrate encode",
+        "Replace: low bitrate",
         "192 kbps avg",
     )
     assert row["O4_score"] != ""

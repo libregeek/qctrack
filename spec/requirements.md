@@ -351,7 +351,7 @@ The first matching row applies.
 | --- | --- |
 | Undetermined | Quick scan, or F3.01 found too little high-frequency content to measure a cutoff |
 | Lossy or band-limited source | G4: F3.02 Fail with no protection rule applying. FLAC (phase 2): lossy signature or F3.10 Fail. |
-| Better encode exists | F1.01 below its Pass band (MP3: below High; Vorbis: below the Pass threshold), or F1.06 Warn |
+| Low-bitrate encode | F1.01 below its Pass band (MP3: below High; Vorbis: below the Pass threshold), or F1.06 Warn |
 | Best available likely | Otherwise |
 
 - **REQ-BCV-01** Protection rules shall stop natural band-limiting from producing "Lossy or band-limited source". Draft rules P1–P6 are in `spec-review-false-positives.md` (finding C2); they move into the quality matrix once tuned under T10.
@@ -365,7 +365,7 @@ The first matching row applies. Priority orders the HTML action filter and the s
 | --- | --- | --- | --- |
 | 1 | Replace: damaged | G2 or G3 applied, F2.06 Fail, or F2.12 Fail (dead channel or inverted polarity) | The same release again: re-rip or re-download |
 | 2 | Replace: lossy source | Verdict "Lossy or band-limited source" | A copy from a different source, lossless or from a trusted store. Another copy from the same seller may share the same master. |
-| 3 | Upgrade the encode | Verdict "Better encode exists" | Any higher-quality copy of the same release: lossless, V0 or 320 kbps |
+| 3 | Replace: low bitrate | Verdict "Low-bitrate encode" | Any higher-quality copy of the same release: lossless, V0 or 320 kbps. Re-encoding the file you have does not help: lost detail cannot be restored, and the result would be a transcode. |
 | 4 | Consider another master | O4 below `advice.consider_master_below` (default 60) | A different release or remaster. A better encode of the same master does not help. |
 | — | Undetermined | Verdict "Undetermined" | Run a full scan |
 | — | Keep: source-limited | Flag `band_limited_source` | Nothing; a better copy is unlikely to exist |

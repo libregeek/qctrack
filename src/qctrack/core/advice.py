@@ -31,7 +31,7 @@ _LAME_STRINGS = ("LAME", "L3.", "Lavc", "Lavf")
 class BestCopy(enum.Enum):
     UNDETERMINED = "Undetermined"
     LOSSY_SOURCE = "Lossy or band-limited source"
-    BETTER_ENCODE = "Better encode exists"
+    LOW_BITRATE = "Low-bitrate encode"
     BEST = "Best available likely"
 
 
@@ -40,7 +40,7 @@ class Action(enum.Enum):
 
     REPLACE_DAMAGED = "Replace: damaged"
     REPLACE_SOURCE = "Replace: lossy source"
-    UPGRADE = "Upgrade the encode"
+    REPLACE_LOW_BITRATE = "Replace: low bitrate"
     CONSIDER_MASTER = "Consider another master"
     UNDETERMINED = "Undetermined"
     KEEP_SOURCE_LIMITED = "Keep: source-limited"
@@ -146,7 +146,7 @@ def best_copy(m: TrackMeasurements, factors: Sequence[FactorResult], score: Trac
     if "G4" in score.gates:
         return BestCopy.LOSSY_SOURCE
     if not encode_is_high(m, f):
-        return BestCopy.BETTER_ENCODE
+        return BestCopy.LOW_BITRATE
     return BestCopy.BEST
 
 
@@ -177,13 +177,15 @@ def advise(
         where = f" ({cut.detail})" if cut else ""
         reason = f"{f['F3.02'].detail}{where}" if "F3.02" in f else "gate G4"
         return Advice(verdict, Action.REPLACE_SOURCE, reason, flags)
-    if verdict is BestCopy.BETTER_ENCODE:
+    if verdict is BestCopy.LOW_BITRATE:
         parts = [
             r.detail
             for k in ("F1.01", "F1.06")
             if (r := f.get(k)) and r.verdict is not Verdict.PASS
         ]
-        return Advice(verdict, Action.UPGRADE, "; ".join(parts) or "low-quality encode", flags)
+        return Advice(
+            verdict, Action.REPLACE_LOW_BITRATE, "; ".join(parts) or "low-quality encode", flags
+        )
     o4 = score.objectives.get("O4")
     limit = float(profile.advice["consider_master_below"])
     if o4 is not None and o4 < limit:
