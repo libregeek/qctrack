@@ -43,6 +43,13 @@ qctrack scan ~/Music --html=library.html -o ~/reports --silent
 qctrack scan a.mp3 b.ogg --quick --csv=-              # CSV to standard output
 ```
 
+Compare copies of one track, or find copies across a library:
+
+```bash
+qctrack compare old/song.mp3 new/song.ogg             # which copy to keep, and why
+qctrack scan ~/Music --duplicates --html              # group copies and rank each group
+```
+
 When running from the source folder without installing, use `PYTHONPATH=src python3 -m qctrack` in place of `qctrack`.
 
 ### Common options
@@ -80,6 +87,37 @@ Other statuses:
 - **Error:** the file could not be analysed. The rest of the scan continues.
 
 Ratings are estimates. Old, lo-fi or band-limited recordings can look like transcodes, so treat a low score as a prompt to look closer, not as proof. Open the HTML report to see each factor's measured value and a plain-language explanation.
+
+The score and rating answer "how good does this file sound?". A separate **action** answers "should I look for a better copy?":
+
+| Action | Meaning | What to look for |
+| --- | --- | --- |
+| Replace: damaged | The file is broken (cut off, corrupt) | The same release again |
+| Replace: lossy source | It claims high quality but was made from a lower-quality file | A copy from a different source |
+| Replace: low bitrate | Genuine, but encoded at a low setting | The same release at a higher bitrate, or lossless |
+| Consider another master | The encode is fine, the mastering is not (clipping, heavy limiting) | A different release or remaster |
+| Undetermined | The tool cannot tell (quick scan, or a dark source that looks like a re-encode) | Check the spectrogram, or run a full scan |
+| Keep: source-limited | High frequencies are faint in the recording itself | Nothing; a better copy is unlikely |
+| Keep | Nothing to improve | Nothing |
+
+Re-encoding a file you already have to a higher bitrate never helps: lost detail cannot be restored, and the result is a transcode. `-v` and the reports show the reason for each action.
+
+### Before you discard a track
+
+A "Replace" action, even with a low score, is not a reason to delete a file on its own:
+
+- **It means "look for a better copy", not "delete this one".** Until you have a better copy, the file you hold is the best one available, and a 128 kbps track still beats no track, especially when a better copy may never turn up.
+- **A low score does not mean the file is useless.** Damage can be small (a missing last few seconds caps the score at 39 but leaves the song playable), and a low-bitrate or lossy-sourced file still plays; it just sounds dull.
+- **The verdicts are estimates.** Check the reason, the spectrogram (`--spectrograms`) or simply listen before deciding.
+
+A safer rule:
+
+1. Find another copy.
+2. Run `qctrack compare old.mp3 new.mp3`.
+3. If it says "keep new.mp3" and names a clear step (integrity, authenticity or encode quality), discard the old one.
+4. If it says "Equivalent", keep whichever you like; the swap is not worth it.
+
+Use scores and actions to decide where to spend effort looking for better copies, and `compare` to decide what to discard once you have something to compare against. qctrack itself never deletes, moves or changes any file.
 
 ## Change the weights
 
