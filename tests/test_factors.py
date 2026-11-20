@@ -17,7 +17,7 @@ from qctrack.core.spectrum import SpectrumResult
 P = load_default()
 ALL_MP3 = {
     "F1.01", "F1.03", "F1.04", "F1.05", "F1.06", "F1.10", "F2.01", "F2.02", "F2.03", "F2.06",
-    "F2.07", "F2.08", "F2.10", "F2.12", "F3.01", "F3.02", "F3.03", "F3.06",
+    "F2.07", "F2.08", "F2.09", "F2.10", "F2.12", "F3.01", "F3.02", "F3.03", "F3.06",
 }  # fmt: skip
 
 
@@ -72,8 +72,19 @@ def test_fake_320_with_low_cutoff_gets_g4() -> None:
     assert results["F3.02"].verdict is Verdict.FAIL
     assert results["F3.01"].verdict is Verdict.FAIL
     s = score_track(results.values(), P)
-    assert s.gates == ("G4",) and s.rating == "D"
-    assert s.final_score is not None and s.final_score <= 59
+    # Profile 2.0: G4 sets the best-copy verdict; the narrow band lowers the score via F3.01.
+    f301 = results["F3.01"].score
+    assert s.gates == ("G4",) and f301 is not None and s.objectives["O3"] == round(f301, 1)
+    assert s.final_score is not None and s.final_score > 59  # no cap
+
+
+def test_loudness_scored_only_at_the_loud_extreme() -> None:
+    loud = LoudnessResult(2, 44100, 1000, -0.5, -0.2, -6.0, 4.0)
+    quiet = LoudnessResult(2, 44100, 1000, -12.0, -11.5, -28.0, 12.0)
+    assert run(mp3(), loudness=[loud])["F2.09"].score == 25.0
+    assert run(mp3(), loudness=[quiet])["F2.09"].score == 100.0
+    silent = LoudnessResult(2, 44100, 1000, -float("inf"), -float("inf"), -float("inf"), 0.0)
+    assert "F2.09" not in run(mp3(), loudness=[silent])
 
 
 def declared(frames: int) -> dict[str, object]:
@@ -301,7 +312,7 @@ def test_clean_vorbis_scores_and_leaves_out_mp3_only_factors() -> None:
     results = run_ogg(vorbis())
     assert set(results) == {
         "F1.01", "F1.03", "F1.04", "F1.10", "F2.01", "F2.02", "F2.03", "F2.05", "F2.06",
-        "F2.07", "F2.08", "F2.10", "F2.12", "F2.14", "F3.06",
+        "F2.07", "F2.08", "F2.09", "F2.10", "F2.12", "F2.14", "F3.06",
     }  # fmt: skip
     assert all(r.score == 100.0 for r in results.values()), {
         f: (r.score, r.detail) for f, r in results.items() if r.score != 100.0

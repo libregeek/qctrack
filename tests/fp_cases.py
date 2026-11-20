@@ -161,14 +161,15 @@ CASES: tuple[Case, ...] = (
     Case("vorbis_q1.ogg", "N2", Expect(NOT_POOR), _vorbis("1")),
     Case("vorbis_no_eos.ogg", "C6", Expect(frozenset("A")),
          _derived(_vorbis("6"), ".ogg", clear_eos)),
-    # Real defects and transcodes: must still be caught.
+    # Real defects and transcodes: must still be caught. Since profile 2.0 a transcode's
+    # sound score reflects how it sounds (its source); G4 sets the best-copy verdict.
     Case("half_320.mp3", "C6", Expect(frozenset("F"), ("G2",)),
          _derived(_mp3("-b:a", "320k"), ".mp3", lambda b: b[: len(b) // 2])),
     Case("half_vorbis.ogg", "C6", Expect(frozenset("F"), ("G2",)),
          _derived(_vorbis("6"), ".ogg", lambda b: b[: len(b) // 2])),
-    Case("transcode_128_to_320.mp3", "N1", Expect(frozenset("D"), ("G4",)),
+    Case("transcode_128_to_320.mp3", "N1", Expect(NOT_POOR, ("G4",)),
          _transcode(_mp3("-b:a", "128k"), ".mp3")),
-    Case("transcode_vorbis_q2_to_320.mp3", "N1", Expect(frozenset("D"), ("G4",)),
+    Case("transcode_vorbis_q2_to_320.mp3", "N1", Expect(NOT_POOR, ("G4",)),
          _transcode(_vorbis("2"), ".ogg")),
     # Other formats named .mp3: never scored as broken MP3.
     Case("aac_in_mp4_named.mp3", "C8", Expect(None, ("G1",), "Unsupported"),

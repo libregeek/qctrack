@@ -138,7 +138,7 @@ def test_numbers_use_a_dot_and_timestamps_are_iso_with_zone(
     assert int(row["file_size_bytes"]) == (library / "a.mp3").stat().st_size
     stamp = row["analyzed_at"]
     assert stamp[10] == "T" and (stamp[-6] in "+-") and stamp[-3] == ":"
-    assert row["profile"] == "default@1.1"
+    assert row["profile"] == "default@2.0"
     assert row["analyzer_version"]
 
 

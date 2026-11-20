@@ -90,7 +90,7 @@ def test_ratings_get_their_own_colours(library: Path, capsys: pytest.CaptureFixt
     rows = {Path(ANSI.sub("", ln).split()[0]).name: ln for ln in out.splitlines() if ".mp3" in ln}
     assert "\033[1;32mA" in rows["a.mp3"]  # bold green A badge
     assert re.search(r"\033\[32m\d+\.\d\033\[0m", rows["a.mp3"])  # its score: plain green
-    assert "\033[31mD" in rows["fake.mp3"]  # red D
+    assert "\033[33mC" in rows["fake.mp3"]  # yellow C (G4 no longer caps it at D)
     assert "\033[36mUnsupported" in rows["junk.mp3"]  # cyan, apart from the grades
 
 

@@ -14,21 +14,28 @@ def write(tmp_path: Path, text: str) -> Path:
 
 def test_default_loads_with_spec_values() -> None:
     p = load_default()
-    assert p.label == "default@1.1"
-    assert p.objectives == {"O1": 25, "O2": 30, "O3": 45}
-    assert p.factors["F3.02"] == 30 and p.factors["F2.09"] == 0
-    assert p.gates["G4_cap"] == 59 and p.gates["G5_min_coverage"] == 70
+    assert p.label == "default@2.0"
+    assert p.objectives == {"O1": 25, "O2": 25, "O3": 30, "O4": 20}
+    assert p.factors["F3.01"] == 100 and p.factors["F3.02"] == 0 and p.factors["F2.09"] == 15
+    assert "G4_cap" not in p.gates and p.gates["G5_min_coverage"] == 70
+    assert p.advice["consider_master_below"] == 60 and p.advice["rank_by_mastering"] is True
     assert p.ratings == {"A": 90, "B": 75, "C": 60, "D": 40}
     assert p.mp3_bitrate_anchors == ((64, 0), (128, 50), (160, 75), (256, 100))
 
 
 def test_default_factor_weights_match_requirements_table() -> None:
+    """Requirements 5.3 (profile 2.0): weights per objective, mastering factors in O4."""
     f = load_default().factors
+    o4 = ("F2.07", "F2.08", "F2.09", "F2.10")
     assert sum(v for k, v in f.items() if k.startswith("F1.")) == 100
-    assert sum(v for k, v in f.items() if k.startswith("F2.")) == 108
-    # 110 in the requirements table, less F3.06 (10), which profile 1.1 reports only (H5).
-    assert sum(v for k, v in f.items() if k.startswith("F3.")) == 100
-    assert f["F3.06"] == 0
+    assert sum(v for k, v in f.items() if k.startswith("F2.") and k not in o4) == 91
+    assert sum(f[k] for k in o4) == 100
+    assert sum(v for k, v in f.items() if k.startswith("F3.")) == 100 == f["F3.01"]
+
+
+def test_old_profile_with_a_g4_cap_still_caps(tmp_path: Path) -> None:
+    p = load_profile(write(tmp_path, "[gates]\nG4_cap = 59\n"))
+    assert p.gates["G4_cap"] == 59
 
 
 def test_partial_profile_falls_back_to_default(tmp_path: Path) -> None:
@@ -55,7 +62,10 @@ def test_anchors_replace_whole_curve(tmp_path: Path) -> None:
         ('[factors]\n"F9.99" = 5\n', 2, "unknown factor ID"),
         ('[factors]\n"F3.01" = "high"\n', 2, "must be a number"),
         ('[factors]\n\n\n"F3.01" = true\n', 4, "must be a number"),
-        ("[objectives]\nO1 = 10\nO4 = 5\n", 3, "unknown key"),
+        ("[objectives]\nO1 = 10\nO5 = 5\n", 3, "unknown key"),
+        ("[advice]\nconsider_master_below = 120\n", 2, "above 100"),
+        ("[advice]\nrank_by_mastering = 1\n", 2, "true or false"),
+        ("[advice]\nkeep_everything = true\n", 2, "unknown key"),
         ("[ratings]\nA = 70\nB = 75\n", 2, "overlap"),
         ("[ratings]\nD = 0\n", 2, "above 0"),
         ("[gates]\nG4_cap = 150\n", 2, "above 100"),

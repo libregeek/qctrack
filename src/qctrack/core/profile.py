@@ -19,8 +19,19 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-OBJECTIVES = ("O1", "O2", "O3")
+OBJECTIVES = ("O1", "O2", "O3", "O4")
+#: G4_cap is optional: the default profile has none (G4 sets the best-copy verdict instead,
+#: requirements 5.4), but a profile may still cap the sound score on G4.
 GATE_KEYS = ("G2_cap", "G3_cap", "G4_cap", "G5_min_coverage")
+#: [advice] keys (requirements 5.9, 5.10) with their lowest and highest allowed values;
+#: None for the one switch.
+ADVICE_KEYS: dict[str, tuple[float, float | None] | None] = {
+    "consider_master_below": (0, 100),
+    "equivalent_cutoff_hz": (0, None),
+    "equivalent_mastering": (0, 100),
+    "rank_by_mastering": None,
+    "duplicate_duration_s": (0, None),
+}
 RATING_KEYS = ("A", "B", "C", "D")
 _TOP_LEVEL = (
     "name",
@@ -31,6 +42,7 @@ _TOP_LEVEL = (
     "curves",
     "gates",
     "ratings",
+    "advice",
 )
 BITRATE_CODECS = ("mp3", "vorbis")
 _DEFAULT_RESOURCE = "default-profile.toml"
@@ -62,6 +74,8 @@ class Profile:
     curves: Mapping[str, Curve]
     gates: Mapping[str, float]
     ratings: Mapping[str, float]
+    #: Replacement advice and copy ranking thresholds (``[advice]``).
+    advice: Mapping[str, float | bool]
     content_hash: str  # sha256 of the merged content, recorded in reports (REQ-PRF-06)
 
     @property
@@ -174,6 +188,16 @@ def _validate(
         c.unknown(("gates",), gates, GATE_KEYS)
         for k, v in gates.items():
             c.number(("gates", k), v, 0, 100)
+    if "advice" in data:
+        advice = c.table(("advice",), data["advice"])
+        c.unknown(("advice",), advice, tuple(ADVICE_KEYS))
+        for k, v in advice.items():
+            limits = ADVICE_KEYS[k]
+            if limits is None:
+                if not isinstance(v, bool):
+                    raise c.fail(("advice", k), f"advice.{k}: must be true or false")
+            else:
+                c.number(("advice", k), v, limits[0], limits[1])
     if "ratings" in data:
         ratings = c.table(("ratings",), data["ratings"])
         c.unknown(("ratings",), ratings, RATING_KEYS)
@@ -310,6 +334,7 @@ def _build(merged: Mapping[str, Any]) -> Profile:
         },
         gates={k: float(v) for k, v in merged["gates"].items()},
         ratings={k: float(v) for k, v in merged["ratings"].items()},
+        advice={k: v if isinstance(v, bool) else float(v) for k, v in merged["advice"].items()},
         content_hash=hashlib.sha256(canonical).hexdigest(),
     )
 

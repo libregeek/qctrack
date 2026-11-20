@@ -1,13 +1,13 @@
 File                     Album   Title                   Score  Rating       Gates  Notes
 -----------------------  ------  ----------------------  -----  -----------  -----  -------------------------------------
 /golden/lib/cut.mp3                                       39.0  F            G2
-/golden/lib/fake320.mp3  Golden  Band-limited, "quoted"   39.5  F            G4
-/golden/lib/genuine.mp3  Golden  Genuine                  98.6  A
+/golden/lib/fake320.mp3  Golden  Band-limited, "quoted"   47.1  F            G4
+/golden/lib/genuine.mp3  Golden  Genuine                  94.8  B
 /golden/lib/junk.mp3                                         -  Unsupported  G1     Unknown; supported in a later release
 /golden/lib/other.opus                                       -  Unsupported  G1     Opus; supported in a later release
-/golden/lib/silence.mp3                                   91.9  B*           G5
-/golden/lib/vorbis.ogg           =formula                 97.1  A
+/golden/lib/silence.mp3                                   84.7  C*           G5
+/golden/lib/vorbis.ogg           =formula                 89.7  B
 * provisional: less than the required share of the weight was evaluated
 
-7 files: A 2, B 1, C 0, D 0, F 2; provisional 1, unsupported 2, errors 0
-Gates: G1 format not supported yet, not scored; G2 broken or truncated stream, capped at 39; G4 likely transcode or fake lossless, capped at 49; G5 under 70% of the weight evaluated, rating provisional
+7 files: A 0, B 2, C 1, D 0, F 2; provisional 1, unsupported 2, errors 0
+Gates: G1 format not supported yet, not scored; G2 broken or truncated stream, capped at 39; G4 content consistent with a lower-quality or band-limited source, capped at 49; G5 under 70% of the weight evaluated, rating provisional

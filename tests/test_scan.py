@@ -39,12 +39,14 @@ def test_analyze_scores_a_real_ogg(library: Path) -> None:
     assert "F2.05" in {f.factor for f in r.factors}
 
 
-def test_genuine_320_scores_a_and_a_fake_320_is_capped_by_g4(library: Path) -> None:
+def test_genuine_320_scores_a_and_a_fake_320_gets_g4(library: Path) -> None:
     real = analyze_file(library / "a.mp3", P).score
     assert (real.rating, real.gates) == ("A", ())
     fake = analyze_file(library / "fake.mp3", P).score
-    assert fake.gates == ("G4",) and fake.rating == "D"
-    assert fake.final_score is not None and fake.final_score <= 59
+    # Content stops at about 12 kHz: G4, and a sound score lowered by the narrow band.
+    o3 = fake.objectives["O3"]
+    assert fake.gates == ("G4",) and o3 is not None and o3 < 50
+    assert fake.final_score is not None and fake.final_score < 75
 
 
 def _ogg_crc(page: bytes) -> int:
@@ -240,7 +242,7 @@ def test_legend_follows_the_summary_and_explains_only_the_gates_shown(
     assert lines[-2].startswith("6 files:")
     legend = lines[-1]
     assert legend.startswith("Gates: G1 format not supported yet, not scored; G4 ")
-    assert "capped at 59" in legend
+    assert "sets the best-copy verdict" in legend and "capped" not in legend
     assert "G2" not in legend and "G3" not in legend and "G5" not in legend
 
 

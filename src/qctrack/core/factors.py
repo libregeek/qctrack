@@ -318,10 +318,14 @@ def _pcm_factors(m: TrackMeasurements, profile: Profile) -> list[FactorResult]:
         )
 
     if not m.loudness:
-        out += [_not_evaluated("F2.08", quick), _not_evaluated("F2.10", quick)]
+        out += [_not_evaluated(x, quick) for x in ("F2.08", "F2.09", "F2.10")]
     else:
         peak = max(r.true_peak_db for r in m.loudness)
         out.append(_numeric("F2.08", peak, c["F2.08"], f"{peak:.1f} dBTP"))
+        lufs = [r.integrated_lufs for r in m.loudness if r.integrated_lufs > -70]
+        if lufs:  # silence has no integrated loudness: left out
+            loud = max(lufs)
+            out.append(_numeric("F2.09", loud, c["F2.09"], f"{loud:.1f} LUFS"))
         lra = min(r.lra_lu for r in m.loudness)
         out.append(_numeric("F2.10", lra, c["F2.10"], f"LRA {lra:.1f} LU"))
 

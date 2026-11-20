@@ -73,14 +73,14 @@ def test_markup_in_tags_and_file_names_is_escaped(report_html: Path) -> None:
 
 def test_summary_table_and_details_are_present(report_html: Path) -> None:
     html = report_html.read_text()
-    assert "Profile default@1.1" in html and load_default().content_hash[:12] in html
+    assert "Profile default@2.0" in html and load_default().content_hash[:12] in html
     assert re.search(r"Scanned \d{4}-\d\d-\d\d \d\d:\d\d:\d\d[+-]\d\d:\d\d", html)
     assert html.count("<tr data-i=") == 4
     assert "Score distribution" in html and "Show as table" in html
     data = json.loads(re.search(r'<script id="data"[^>]*>(.*?)</script>', html, re.S).group(1))  # type: ignore[union-attr]
     assert len(data["tracks"]) == 4
     assert data["factors"]["F3.01"][0] == "Measured spectral cutoff"
-    assert [o[0] for o in data["objectives"]] == ["O1", "O2", "O3"]
+    assert [o[0] for o in data["objectives"]] == ["O1", "O2", "O3", "O4"]
     scored = data["tracks"][1]  # a.mp3; tracks are in path order and "<" sorts first
     assert scored["f"] and scored["f"][0][0] == "F1.01"
 

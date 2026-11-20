@@ -58,14 +58,14 @@ def test_report_json_holds_measurements_scores_and_profile(first_run: Path) -> N
     doc = strict_load(first_run / "report.json")
     assert doc["format"] == "qctrack-report" and doc["schema"] == 1
     profile = load_default()
-    assert doc["profile"]["label"] == "default@1.1"
+    assert doc["profile"]["label"] == "default@2.0"
     assert doc["profile"]["sha256"] == profile.content_hash
     assert doc["profile"]["values"]["factors"]["F1.01"] == profile.factors["F1.01"]
     tracks = {Path(t["path"]).name: t for t in doc["tracks"]}
     assert list(tracks) == ["a.mp3", "b.ogg", "c.flac", "junk.mp3", "s.mp3"]
     a = tracks["a.mp3"]
     assert a["status"] == "Scored" and 0 <= a["final_score"] <= 100 and a["rating"]
-    assert set(a["objectives"]) == {"O1", "O2", "O3"}
+    assert set(a["objectives"]) == {"O1", "O2", "O3", "O4"}
     assert a["factors"] and {"factor", "score", "verdict", "detail"} <= set(a["factors"][0])
     m = a["measured"]
     assert m["tags"]["title"] == "<script>alert(1)</script>"

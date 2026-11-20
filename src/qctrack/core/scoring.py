@@ -89,14 +89,20 @@ def gate_legend(profile: Profile) -> dict[str, str]:
         "G1": "format not supported yet, not scored",
         "G2": f"broken or truncated stream, capped at {g['G2_cap']:g}",
         "G3": f"embedded checksum mismatch, capped at {g['G3_cap']:g}",
-        "G4": f"likely transcode or fake lossless, capped at {g['G4_cap']:g}",
+        "G4": "content consistent with a lower-quality or band-limited source"
+        + (f", capped at {g['G4_cap']:g}" if "G4_cap" in g else ", sets the best-copy verdict"),
         "G5": f"under {g['G5_min_coverage']:g}% of the weight evaluated, rating provisional",
     }
 
 
+#: Factors scored outside the objective their ID suggests: the mastering factors moved to
+#: O4 (requirements 5.3) and keep their IDs.
+_MOVED = {"F2.07": "O4", "F2.08": "O4", "F2.09": "O4", "F2.10": "O4"}
+
+
 def objective_of(factor: str) -> str:
-    """``F2.06`` belongs to objective ``O2``."""
-    return f"O{factor[1]}"
+    """``F2.06`` belongs to objective ``O2``; ``F2.07``-``F2.10`` to ``O4`` (Mastering)."""
+    return _MOVED.get(factor, f"O{factor[1]}")
 
 
 def rating_for(score: float, profile: Profile) -> str:
@@ -153,7 +159,9 @@ def score_track(results: Iterable[FactorResult], profile: Profile) -> TrackScore
 
     final = sum(w * v for w, v in scored) / total_weight
     for gate in gates:
-        final = min(final, profile.gates[f"{gate}_cap"])
+        cap = profile.gates.get(f"{gate}_cap")  # G4 has no cap unless the profile sets one
+        if cap is not None:
+            final = min(final, cap)
     final = round(final, 1)
     provisional = coverage < profile.gates["G5_min_coverage"]
     if provisional:

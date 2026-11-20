@@ -31,23 +31,24 @@ def full(score: float, **override: float) -> list[FactorResult]:
 
 
 def test_sample_row_1_final_score_and_rating() -> None:
-    # Objective scores 94.0 / 98.5 / 95.2 combine to 95.9, rating A, no gates.
-    s = score_track([fr("F1.01", 94.0), fr("F2.01", 98.5), fr("F3.01", 95.2)], P)
-    assert s.objectives == {"O1": 94.0, "O2": 98.5, "O3": 95.2}
-    assert (s.final_score, s.rating, s.gates, s.coverage_pct) == (95.9, "A", (), 100.0)
+    # Objective scores 94.0 / 98.5 / 96.0 / 90.0 combine to 94.9, rating A, no gates.
+    s = score_track(
+        [fr("F1.01", 94.0), fr("F2.01", 98.5), fr("F3.01", 96.0), fr("F2.07", 90.0)], P
+    )
+    assert s.objectives == {"O1": 94.0, "O2": 98.5, "O3": 96.0, "O4": 90.0}
+    assert (s.final_score, s.rating, s.gates, s.coverage_pct) == (94.9, "A", (), 100.0)
     assert s.status is Status.SCORED
 
 
-def test_sample_row_2_gate_g4_listed_when_f3_02_fails() -> None:
-    results = [fr("F1.01", 81.5), fr("F2.01", 96.0), fr("F3.02", 0.0, Verdict.FAIL)]
+def test_sample_row_2_g4_is_listed_but_does_not_cap() -> None:
+    """Requirements 6.4 row 2: a 320 kbps file whose content stops near 16 kHz. Its narrow
+    bandwidth lowers the sound score to C; G4 is listed and sets the verdict, no cap."""
+    results = [
+        fr("F1.01", 81.5), fr("F2.01", 96.0), fr("F3.01", 20.0), fr("F2.07", 85.0),
+        fr("F3.02", 0.0, Verdict.FAIL),
+    ]  # fmt: skip
     s = score_track(results, P)
-    assert s.gates == ("G4",) and s.rating == "D" and s.final_score is not None
-    assert s.final_score <= 59
-
-
-def test_sample_row_2_exact_numbers() -> None:
-    s = score_track([fr("F1.01", 81.5), fr("F2.01", 96.0), fr("F3.01", 18.3)], P)
-    assert (s.final_score, s.rating) == (57.4, "D")
+    assert (s.final_score, s.rating, s.gates) == (67.4, "C", ("G4",))
 
 
 def test_sample_row_3_unsupported() -> None:
@@ -64,11 +65,16 @@ def test_sample_row_3_unsupported() -> None:
 # --- gates ----------------------------------------------------------------------------
 
 
-def test_g4_caps_a_high_score_at_59() -> None:
-    s = score_track(full(100), P)
-    assert s.final_score == 100.0 and s.rating == "A"
-    bad = [fr(r.factor, 100.0, Verdict.FAIL if r.factor == "F3.02" else None) for r in full(100)]
-    s = score_track(bad, P)
+def g4_results() -> list[FactorResult]:
+    return full(100) + [fr("F3.02", 0.0, Verdict.FAIL)]
+
+
+def test_g4_has_no_cap_by_default_but_a_profile_may_set_one(tmp_path: Path) -> None:
+    s = score_track(g4_results(), P)
+    assert s.final_score == 100.0 and s.rating == "A" and s.gates == ("G4",)
+    capped = tmp_path / "cap.toml"
+    capped.write_text("[gates]\nG4_cap = 59\n")
+    s = score_track(g4_results(), load_profile(capped))
     assert s.final_score == 59 and s.rating == "D" and s.gates == ("G4",)
 
 
@@ -91,7 +97,7 @@ def test_lowest_cap_wins_when_several_gates_apply() -> None:
         fr("F1.01", 100.0),
     ]
     s = score_track(results, P)
-    assert s.gates == ("G2", "G4") and s.final_score == 39.0
+    assert s.gates == ("G2", "G4") and s.final_score == 39.0  # G2's cap; G4 has none
 
 
 def test_warn_does_not_trigger_a_gate() -> None:
@@ -114,9 +120,9 @@ def test_objective_without_evaluated_factors_is_dropped_from_the_final() -> None
 
 
 def test_coverage_is_share_of_applicable_weight() -> None:
-    # Applicable: F1.01 (25*30) and F3.01 (45*25); only F1.01 evaluated.
+    # Applicable: F1.01 (25*30) and F3.01 (30*100); only F1.01 evaluated.
     s = score_track([fr("F1.01", 100.0), fr("F3.01", None)], P)
-    assert s.coverage_pct == pytest.approx(100 * 750 / (750 + 1125), abs=0.05)
+    assert s.coverage_pct == pytest.approx(100 * 750 / (750 + 3000), abs=0.05)
 
 
 def test_g5_marks_low_coverage_provisional() -> None:
@@ -131,7 +137,7 @@ def test_full_coverage_is_scored() -> None:
 
 def test_info_factors_never_change_the_score() -> None:
     a = score_track([fr("F1.01", 70.0)], P)
-    b = score_track([fr("F1.01", 70.0), fr("F1.02", 0.0), fr("F2.09", 0.0)], P)
+    b = score_track([fr("F1.01", 70.0), fr("F1.02", 0.0), fr("F3.06", 0.0)], P)
     assert a == b
 
 
@@ -170,6 +176,7 @@ def test_rating_bands(score: float, rating: str) -> None:
 
 def test_objective_of() -> None:
     assert [objective_of(f) for f in ("F1.01", "F2.14", "F3.10")] == ["O1", "O2", "O3"]
+    assert {objective_of(f) for f in ("F2.07", "F2.08", "F2.09", "F2.10")} == {"O4"}
 
 
 def test_categorical_scores() -> None:

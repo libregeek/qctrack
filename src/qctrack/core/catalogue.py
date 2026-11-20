@@ -6,7 +6,8 @@ from __future__ import annotations
 OBJECTIVE_NAMES = {
     "O1": "Metadata & encoding",
     "O2": "Technical integrity",
-    "O3": "Authenticity & transcode",
+    "O3": "Bandwidth & authenticity",
+    "O4": "Mastering",
 }
 
 #: factor ID -> (name, why it matters)

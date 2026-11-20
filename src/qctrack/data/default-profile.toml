@@ -2,17 +2,19 @@
 # Copy it (`qctrack profile show-default > my-profile.toml`), edit it, then pass
 # `--profile my-profile.toml` or save it as ~/.config/qctrack/profile.toml.
 # A profile may override only some values; anything omitted falls back to this file.
+# Weights and advice thresholds of version 2.0 are proposals awaiting approval (T17).
 name = "default"
-version = "1.1"
+version = "2.0"
 
-# Weight of each objective in the final score.
+# Weight of each objective in the sound score (requirements 5.2).
 [objectives]
 O1 = 25  # Metadata & encoding
-O2 = 30  # Technical integrity
-O3 = 45  # Authenticity & transcode
+O2 = 25  # Technical integrity
+O3 = 30  # Bandwidth & authenticity: only the measured bandwidth (F3.01) is scored
+O4 = 20  # Mastering: F2.07-F2.10; set to 0 to leave mastering out of the score
 
 # Relative weight of each factor within its objective. A weight of 0 means the factor is
-# reported but never changes the score.
+# reported (and may set a gate or the best-copy verdict) but never changes the score.
 [factors]
 # O1 Metadata & encoding
 "F1.01" = 30  # Nominal & average bitrate
@@ -33,25 +35,26 @@ O3 = 45  # Authenticity & transcode
 "F2.04" = 10  # Embedded audio checksum (FLAC)
 "F2.05" = 10  # Block-level CRC
 "F2.06" = 15  # Decode errors
-"F2.07" = 10  # Clipping
-"F2.08" = 3   # Peak & true peak
-"F2.09" = 0   # Integrated loudness (info, genre-dependent)
-"F2.10" = 4   # Dynamic range
 "F2.11" = 2   # DC offset
 "F2.12" = 6   # Channel anomalies
 "F2.13" = 3   # Silence & dropouts
 "F2.14" = 5   # Ogg stream layout
-# O3 Authenticity & transcode
-"F3.01" = 25  # Measured spectral cutoff
-"F3.02" = 30  # Claimed vs effective quality
-"F3.03" = 10  # Declared vs measured bandwidth
-"F3.04" = 10  # Cutoff sharpness
-"F3.05" = 10  # High-band holes & flicker
-"F3.06" = 0   # Upsampling detection: reported only, because in MP3 and Vorbis an
-              # encoder lowpass near 16 kHz looks the same as a 32 kHz source (H5)
+# O4 Mastering (IDs unchanged: these factors moved from O2)
+"F2.07" = 40  # Clipping
+"F2.08" = 15  # Peak & true peak
+"F2.09" = 15  # Integrated loudness, scored only at the loud extreme
+"F2.10" = 30  # Dynamic range
+# O3 Bandwidth & authenticity: the other factors are evidence for the best-copy verdict
+"F3.01" = 100 # Measured spectral cutoff
+"F3.02" = 0   # Claimed vs effective quality (sets gate G4 and the verdict)
+"F3.03" = 0   # Declared vs measured bandwidth
+"F3.04" = 0   # Cutoff sharpness
+"F3.05" = 0   # High-band holes & flicker
+"F3.06" = 0   # Upsampling detection: in MP3 and Vorbis an encoder lowpass near 16 kHz
+              # looks the same as a 32 kHz source (H5)
 "F3.07" = 0   # Experimental
 "F3.08" = 0   # View only
-"F3.10" = 15  # Fake bit depth
+"F3.10" = 0   # Fake bit depth (FLAC, phase 2)
 
 [bitrate.mp3]
 # Average kbps = factor score for F1.01. Scores are interpolated between these points;
@@ -73,20 +76,30 @@ anchors = { 64 = 0, 112 = 50, 160 = 100 }
 "F2.06" = [[0, 100], [5, 50], [20, 0]]         # decode errors, count
 "F2.07" = [[0.001, 100], [0.1, 50], [1, 0]]    # clipped samples, %
 "F2.08" = [[-1, 100], [0.5, 50], [3, 0]]       # true peak, dBTP
+"F2.09" = [[-9, 100], [-7, 50], [-5, 0]]       # integrated loudness, LUFS (loud extreme only)
 "F2.10" = [[1, 0], [3, 50], [5, 100]]          # loudness range, LU
 "F3.01" = [[12000, 0], [16500, 50], [19500, 100]]  # MP3 spectral cutoff, Hz
 "F3.03" = [[1000, 100], [2500, 50], [5000, 0]] # measured cutoff below the declared lowpass, Hz
 
-# Caps on the final score, and the coverage below which the rating is marked Provisional.
+# Caps on the sound score, and the coverage below which the rating is marked Provisional.
+# G4 (likely transcode) has no cap: it sets the best-copy verdict instead (requirements
+# 5.4). Add G4_cap here to cap the score as well.
 [gates]
 G2_cap = 39            # F2.01 or F2.02 Fail (desync or truncation)
 G3_cap = 39            # F2.04 Fail on FLAC (MD5 mismatch)
-G4_cap = 59            # F3.02 Fail (likely transcode or fake lossless)
 G5_min_coverage = 70   # percent
 
-# Lowest final score for each rating. F is everything below D.
+# Lowest sound score for each rating. F is everything below D.
 [ratings]
 A = 90
 B = 75
 C = 60
 D = 40
+
+# Replacement advice (requirements 5.9) and ranking of copies (5.10).
+[advice]
+consider_master_below = 60    # O4 score below which "Consider another master" applies
+equivalent_cutoff_hz = 1000   # compare: smaller cutoff differences count as equal
+equivalent_mastering = 10     # compare: smaller O4 differences count as equal
+rank_by_mastering = true      # compare: false skips the mastering step
+duplicate_duration_s = 2      # --duplicates: largest duration difference in a group
