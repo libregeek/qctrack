@@ -81,6 +81,10 @@ def test_summary_table_and_details_are_present(report_html: Path) -> None:
     assert len(data["tracks"]) == 4
     assert data["factors"]["F3.01"][0] == "Measured spectral cutoff"
     assert [o[0] for o in data["objectives"]] == ["O1", "O2", "O3", "O4"]
+    # Best copy and action: columns, an action filter, counts per action, detail line.
+    assert '<button type="button">Best copy</button>' in html and 'id="action"' in html
+    assert 'data-action="Keep"' in html and "<span>Keep</span>" in html
+    assert any(t.get("adv") and t["adv"][1] == "Keep" for t in data["tracks"])
     scored = data["tracks"][1]  # a.mp3; tracks are in path order and "<" sorts first
     assert scored["f"] and scored["f"][0][0] == "F1.01"
 

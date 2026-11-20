@@ -21,6 +21,7 @@ from typing import Any, TextIO
 import jinja2
 
 from qctrack import __version__
+from qctrack.core.advice import Action
 from qctrack.core.analyze import TrackReport
 from qctrack.core.catalogue import FACTORS, OBJECTIVE_NAMES
 from qctrack.core.profile import OBJECTIVES, Profile
@@ -46,6 +47,10 @@ class Row:
     score_sort: str
     rating: str
     rating_class: str
+    best_copy: str
+    action: str
+    #: Action priority (1 most urgent) for sorting; empty when there is no action.
+    action_sort: str
     gates: str
 
 
@@ -84,6 +89,9 @@ def _row(i: int, r: TrackReport) -> Row:
         _num(s.final_score),
         rating,
         cls,
+        r.advice.best_copy.value if r.advice else "",
+        r.advice.action.value if r.advice else "",
+        str(r.advice.action.priority) if r.advice else "",
         ";".join(s.gates),
     )
 
@@ -145,6 +153,9 @@ def _detail(r: TrackReport, spectrograms: bool = False) -> dict[str, Any]:
         d["size"] = r.size
     if r.tags.problems:
         d["tags"] = r.tags.problems
+    if r.advice is not None:
+        a = r.advice
+        d["adv"] = [a.best_copy.value, a.action.value, a.reason, list(a.flags)]
     if spectrograms and (sg := _spectrogram(r)) is not None:
         d["sg"] = sg
     return d
@@ -188,6 +199,7 @@ def write_html(
     """Write the whole report to ``out``. Pictures are embedded only with ``spectrograms``."""
     rows = [_row(i, r) for i, r in enumerate(reports)]
     ratings: Counter[str] = Counter(r.score.rating for r in reports if r.score.rating)
+    actions: Counter[Action] = Counter(r.advice.action for r in reports if r.advice)
     status: Counter[Status] = Counter(r.score.status for r in reports)
     used_gates = sorted({g for r in reports for g in r.score.gates})
     legend = gate_legend(profile)
@@ -205,6 +217,7 @@ def write_html(
             rows=rows,
             total=len(reports),
             ratings=[(k, ratings[k]) for k in "ABCDF"],
+            actions=[(a.value, actions[a]) for a in Action if actions[a]],
             provisional=status[Status.PROVISIONAL],
             unsupported=status[Status.UNSUPPORTED],
             errors=status[Status.ERROR],

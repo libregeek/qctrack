@@ -28,6 +28,10 @@ def test_case(case: Case, work: Path) -> None:
     assert s.status.value == case.expect.status, got
     assert s.gates == case.expect.gates, got
     if case.expect.ratings is None:
-        assert s.rating is None, got
+        assert s.rating is None and r.advice is None, got
     else:
         assert s.rating in case.expect.ratings, got
+        assert r.advice is not None and r.advice.action.value == case.expect.action, (
+            r.advice,
+            got,
+        )

@@ -1,13 +1,14 @@
-File                     Album   Title                   Score  Rating       Gates  Notes
------------------------  ------  ----------------------  -----  -----------  -----  -------------------------------------
-/golden/lib/cut.mp3                                       39.0  F            G2
-/golden/lib/fake320.mp3  Golden  Band-limited, "quoted"   47.1  F            G4
-/golden/lib/genuine.mp3  Golden  Genuine                  94.8  B
-/golden/lib/junk.mp3                                         -  Unsupported  G1     Unknown; supported in a later release
-/golden/lib/other.opus                                       -  Unsupported  G1     Opus; supported in a later release
-/golden/lib/silence.mp3                                   84.7  C*           G5
-/golden/lib/vorbis.ogg           =formula                 89.7  B
+File                     Album   Title                   Score  Rating       Action                 Gates  Notes
+-----------------------  ------  ----------------------  -----  -----------  ---------------------  -----  -------------------------------------
+/golden/lib/cut.mp3                                       39.0  F            Replace: damaged       G2
+/golden/lib/fake320.mp3  Golden  Band-limited, "quoted"   48.3  F            Replace: lossy source  G4
+/golden/lib/genuine.mp3  Golden  Genuine                  94.8  B            Keep
+/golden/lib/junk.mp3                                         -  Unsupported                         G1     Unknown; supported in a later release
+/golden/lib/other.opus                                       -  Unsupported                         G1     Opus; supported in a later release
+/golden/lib/silence.mp3                                   84.7  C*           Undetermined           G5
+/golden/lib/vorbis.ogg           =formula                 89.7  B            Keep
 * provisional: less than the required share of the weight was evaluated
 
 7 files: A 0, B 2, C 1, D 0, F 2; provisional 1, unsupported 2, errors 0
+Actions: Replace: damaged 1, Replace: lossy source 1, Undetermined 1, Keep 2
 Gates: G1 format not supported yet, not scored; G2 broken or truncated stream, capped at 39; G4 content consistent with a lower-quality or band-limited source, capped at 49; G5 under 70% of the weight evaluated, rating provisional

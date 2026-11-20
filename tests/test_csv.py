@@ -139,6 +139,13 @@ def test_numbers_use_a_dot_and_timestamps_are_iso_with_zone(
     stamp = row["analyzed_at"]
     assert stamp[10] == "T" and (stamp[-6] in "+-") and stamp[-3] == ":"
     assert row["profile"] == "default@2.0"
+    # a.mp3 in this library is a genuine 192 kbps encode.
+    assert (row["best_copy"], row["action"], row["action_reason"]) == (
+        "Better encode exists",
+        "Upgrade the encode",
+        "192 kbps avg",
+    )
+    assert row["O4_score"] != ""
     assert row["analyzer_version"]
 
 

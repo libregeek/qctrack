@@ -31,20 +31,22 @@ def main() -> int:
     for case in CASES:
         path = out / case.name
         case.build(work, path)
-        s = analyze_file(path, profile).score
+        report = analyze_file(path, profile)
+        s, action = report.score, report.advice.action.value if report.advice else None
         e = case.expect
         ok = (
             s.status.value == e.status
             and s.gates == e.gates
             and (s.rating is None if e.ratings is None else s.rating in e.ratings)
+            and action == e.action
         )
         misses += not ok
         want = "/".join(sorted(e.ratings)) if e.ratings else e.status
         score = "" if s.final_score is None else f"{s.final_score:5.1f}"
         print(
             f"{'ok  ' if ok else 'MISS'} {case.name:34s} {case.finding:8s} {score:>5} "
-            f"{s.rating or s.status.value:11s} {','.join(s.gates):6s} want {want}"
-            + (f" {','.join(e.gates)}" if e.gates else "")
+            f"{s.rating or s.status.value:11s} {','.join(s.gates):6s} {action or '':22s} "
+            f"want {want}" + (f" {','.join(e.gates)}" if e.gates else "")
         )
     return 1 if misses else 0
 

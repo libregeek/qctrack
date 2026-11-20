@@ -269,33 +269,40 @@ def _factor_lines(report: TrackReport, paint: Painter) -> list[str]:
     s = report.score
     objs = ", ".join(f"{k} {v:.1f}" if v is not None else f"{k} -" for k, v in s.objectives.items())
     lines.append(f"objectives: {objs}; coverage {s.coverage_pct:.0f}%")
+    if report.advice is not None:
+        a = report.advice
+        lines.append(f"best copy: {a.best_copy.value}")
+        lines.append(f"action: {a.action.value}" + (f" ({a.reason})" if a.reason else ""))
+        if a.flags:
+            lines.append(f"flags: {', '.join(a.flags)}")
     return lines
 
 
 def _table_row(report: TrackReport) -> tuple[list[str], str, str]:
-    """Table cells (file, album, title, score, rating, gates), a note for the Notes column,
-    and a tone (the rating letter, or ``error``/``unsupported``/``unscored``) for colour."""
+    """Table cells (file, album, title, score, rating, action, gates), a note for the Notes
+    column, and a tone (the rating letter, or ``error``/``unsupported``/``unscored``)."""
     s = report.score
     tags = report.tags
     head = [str(report.path), tags.album, tags.title]
     if s.status is Status.ERROR:
-        return [*head, "-", "Error", ""], report.message, "error"
+        return [*head, "-", "Error", "", ""], report.message, "error"
     if s.status is Status.UNSUPPORTED:
         assert report.detection is not None
         note = describe(report.detection).removeprefix("Unsupported (").removesuffix(")")
-        return [*head, "-", "Unsupported", ";".join(s.gates)], note, "unsupported"
+        return [*head, "-", "Unsupported", "", ";".join(s.gates)], note, "unsupported"
     if s.final_score is None or s.rating is None:
-        return [*head, "-", "Unscored", ""], "", "unscored"
+        return [*head, "-", "Unscored", "", ""], "", "unscored"
     rating = s.rating + ("*" if s.status is Status.PROVISIONAL else "")
-    return [*head, f"{s.final_score:.1f}", rating, ";".join(s.gates)], "", s.rating
+    action = report.advice.action.value if report.advice else ""
+    return [*head, f"{s.final_score:.1f}", rating, action, ";".join(s.gates)], "", s.rating
 
 
-_FILE, _SCORE, _RATING, _GATES, _NOTES = 0, 3, 4, 5, 6
+_FILE, _SCORE, _RATING, _ACTION, _GATES, _NOTES = 0, 3, 4, 5, 6, 7
 
 
 def _print_table(reports: Sequence[TrackReport], paint: Painter) -> None:
     rows, notes, tones = zip(*(_table_row(r) for r in reports), strict=True)
-    headers = ["File", "Album", "Title", "Score", "Rating", "Gates"]
+    headers = ["File", "Album", "Title", "Score", "Rating", "Action", "Gates"]
     table = [list(r) for r in rows]
     if any(notes):
         headers.append("Notes")
@@ -320,12 +327,16 @@ def _print_table(reports: Sequence[TrackReport], paint: Painter) -> None:
             return paint(text, "red") if tone == "error" else paint(text, "cyan")
         if col == _GATES:
             return paint(text, "yellow")
+        if col == _ACTION and text.startswith("Replace"):
+            return paint(text, "red")
+        if col == _ACTION and text in ("Upgrade the encode", "Consider another master"):
+            return paint(text, "yellow")
         if col == _NOTES:
             return paint(text, "dim")
         return text
 
     width = shutil.get_terminal_size().columns if sys.stdout.isatty() else None
-    shrink = [i for i in (0, 1, 2, 6) if i < len(headers)]
+    shrink = [i for i in (0, 1, 2, _NOTES) if i < len(headers)]
     for line in format_table(
         headers,
         table,
@@ -361,11 +372,16 @@ def _summary(reports: Sequence[TrackReport], paint: Painter | None = None) -> st
     provisional = sum(1 for r in reports if r.score.status is Status.PROVISIONAL)
     errors = other[Status.ERROR]
     err_text = f"errors {errors}"
-    return (
+    line = (
         f"{paint(f'{len(reports)} files:', 'bold')} {graded}; provisional {provisional}, "
         f"unsupported {other[Status.UNSUPPORTED]}, "
         f"{paint(err_text, 'red') if errors else err_text}"
     )
+    actions = Counter(r.advice.action for r in reports if r.advice is not None)
+    if not actions:
+        return line
+    listed = ", ".join(f"{a.value} {actions[a]}" for a in sorted(actions, key=lambda a: a.priority))
+    return f"{line}\n{paint('Actions:', 'bold')} {listed}"
 
 
 def _legend(reports: Sequence[TrackReport], profile: Profile, paint: Painter) -> str | None:

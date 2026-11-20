@@ -197,7 +197,7 @@ def test_sample_rate_channels_and_length() -> None:
     assert run(mp3(sample_rate=32000))["F1.03"].verdict is Verdict.WARN
     assert run(mp3(sample_rate=22050))["F1.03"].verdict is Verdict.FAIL
     assert run(mp3(sample_rates_seen={44100, 48000}))["F1.03"].verdict is Verdict.WARN
-    assert run(mp3(channel_mode="Mono"))["F1.04"].verdict is Verdict.WARN
+    assert run(mp3(channel_mode="Mono"))["F1.04"].verdict is Verdict.PASS  # a flag (H6)
     assert run(mp3(length_mismatch=0.0))["F1.08"].verdict is Verdict.PASS
     assert run(mp3(length_mismatch=0.004))["F1.08"].verdict is Verdict.WARN
     assert run(mp3(length_mismatch=0.01))["F1.08"].verdict is Verdict.FAIL
@@ -221,7 +221,7 @@ def test_pcm_factors() -> None:
     ("result", "verdict"),
     [
         (ChannelResult(2, 10, [-20.0, -20.0], correlation=0.4), Verdict.PASS),
-        (ChannelResult(2, 10, [-20.0, -20.0], correlation=1.0), Verdict.WARN),
+        (ChannelResult(2, 10, [-20.0, -20.0], correlation=1.0), Verdict.PASS),  # flag (H6)
         (ChannelResult(2, 10, [-20.0, -20.0], correlation=-0.9), Verdict.FAIL),
         (ChannelResult(2, 10, [-20.0, -90.0], correlation=0.1, dead_channels=[1]), Verdict.FAIL),
         (ChannelResult(1, 10, [-20.0]), Verdict.PASS),

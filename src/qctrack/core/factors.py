@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 
 from qctrack.core.authenticity import (
     MIN_RATE_HZ,
+    ClaimedVsEffective,
     Verdict,
     claimed_vs_effective,
     declared_vs_measured,
@@ -127,19 +128,22 @@ def _mp3_pass1(s: Mp3Scan, profile: Profile) -> list[FactorResult]:
         return out + [_categorical("F2.01", Verdict.FAIL, "no MPEG audio frames found")]
     lame = s.lame
 
-    # F1.01: a LAME V0-V2 preset is High whatever the average (quality matrix).
+    # F1.01: a LAME V0-V2 preset is High whatever the average (quality matrix). A mono
+    # stream needs half the bitrate of stereo, so it is judged at twice its rate.
     kbps = s.average_bitrate_kbps
+    mono = s.channel_mode == "Mono"
+    note = f"{kbps:.0f} kbps avg" + (f" (mono: as {2 * kbps:.0f} stereo)" if mono else "")
     v = _vbr_preset(lame) if lame else None
     if lame and v is not None and v <= 2:
-        out.append(_categorical("F1.01", Verdict.PASS, f"{kbps:.0f} kbps avg, {lame.preset_name}"))
+        out.append(_categorical("F1.01", Verdict.PASS, f"{note}, {lame.preset_name}"))
     else:
-        out.append(_numeric("F1.01", kbps, profile.mp3_bitrate_anchors, f"{kbps:.0f} kbps avg"))
+        rate = 2 * kbps if mono else kbps
+        out.append(_numeric("F1.01", rate, profile.mp3_bitrate_anchors, note))
 
     out.append(_sample_rate(s.sample_rate, len(s.sample_rates_seen) > 1))
     mode = s.channel_mode
-    out.append(
-        _categorical("F1.04", Verdict.WARN if mode == "Mono" else Verdict.PASS, mode or "unknown")
-    )
+    # Mono is reported (flag ``mono_content``), not scored: many masters are mono (H6).
+    out.append(_categorical("F1.04", Verdict.PASS, mode or "unknown"))
     encoder = _encoder(s)
     if encoder is not None:
         out.append(encoder)
@@ -166,13 +170,17 @@ def _vorbis_pass1(o: OggScan, profile: Profile) -> list[FactorResult]:
     streams = [s.vorbis for s in o.vorbis_streams if s.vorbis is not None]
     if streams:
         kbps = o.average_bitrate_kbps
-        out.append(_numeric("F1.01", kbps, profile.vorbis_bitrate_anchors, f"{kbps:.0f} kbps avg"))
+        mono = all(v.channels == 1 for v in streams)
+        note = f"{kbps:.0f} kbps avg" + (f" (mono: as {2 * kbps:.0f} stereo)" if mono else "")
+        rate = 2 * kbps if mono else kbps
+        out.append(_numeric("F1.01", rate, profile.vorbis_bitrate_anchors, note))
         out.append(_sample_rate(min(v.rate for v in streams), len({v.rate for v in streams}) > 1))
         if all(v.channels <= 2 for v in streams):
-            counts = {v.channels for v in streams}
-            verdict = Verdict.WARN if 1 in counts else Verdict.PASS
+            counts = {v.channels for v in streams}  # mono is a flag, not a Warn (H6)
             out.append(
-                _categorical("F1.04", verdict, "/".join(str(c) for c in sorted(counts)) + " ch")
+                _categorical(
+                    "F1.04", Verdict.PASS, "/".join(str(c) for c in sorted(counts)) + " ch"
+                )
             )
     structure = o.lost_pages + o.sequence_errors + o.orphan_pages
     out.append(
@@ -284,8 +292,10 @@ def _quality_setting(s: Mp3Scan) -> FactorResult | None:
     v = _vbr_preset(lame)
     if v is not None:
         verdict = Verdict.PASS if v <= 2 else Verdict.WARN
-    elif name == "insane" or (224 <= lame.preset <= 320 and s.mode is not Mp3Mode.VBR):
-        verdict = Verdict.PASS  # CBR or ABR at 224 kbps and above (H4)
+    elif name == "insane" or (
+        224 <= lame.preset * (2 if s.channel_mode == "Mono" else 1) and s.mode is not Mp3Mode.VBR
+    ):
+        verdict = Verdict.PASS  # CBR or ABR at 224 kbps and above, stereo-equivalent (H4)
     else:
         verdict = Verdict.WARN  # lower CBR/ABR rates, fast presets, r3mix, medium
     return _categorical("F1.06", verdict, name)
@@ -344,8 +354,8 @@ def _channels(results: list[ChannelResult]) -> FactorResult:
             verdicts.append(Verdict.FAIL)
             notes.append("dead channel" if r.dead_channels else "inverted channels")
         elif r.fake_stereo:
-            verdicts.append(Verdict.WARN)
-            notes.append("fake stereo (L = R)")
+            verdicts.append(Verdict.PASS)  # mono content in a stereo file: a flag (H6)
+            notes.append("mono content (L = R)")
         else:
             verdicts.append(Verdict.PASS)
     verdict = _worst(verdicts)
@@ -377,10 +387,8 @@ def _spectral_factors(
         cd_rate = [r for r in measured if r.rate >= MIN_RATE_HZ]
         if cd_rate:
             out.append(_cutoff(cd_rate, profile))
-        claims = [claimed_vs_effective(r, avg_kbps, preset) for r in measured]
-        valid = [c for c in claims if c is not None]
-        if valid:
-            worst = max(valid, key=lambda c: (_ORDER[c.verdict], c.bands_lower))
+        worst = mp3_claim(m)
+        if worst is not None:
             said, found = worst.claimed.name.lower(), worst.effective.name.lower()
             detail = f"claims {said}, content supports {found}"
             if worst.protected:
@@ -418,6 +426,21 @@ def _spectral_factors(
     else:
         out.append(_categorical("F3.06", Verdict.PASS, "not detected"))
     return out
+
+
+def mp3_claim(m: TrackMeasurements) -> ClaimedVsEffective | None:
+    """The worst F3.02 outcome over the file's stretches (MP3 only), or None."""
+    if m.mp3 is None:
+        return None
+    lame = m.mp3.lame
+    preset = lame.preset_name if lame else None
+    claims = [
+        claimed_vs_effective(r, m.mp3.average_bitrate_kbps, preset)
+        for r in m.spectrum
+        if r.measured
+    ]
+    valid = [c for c in claims if c is not None]
+    return max(valid, key=lambda c: (_ORDER[c.verdict], c.bands_lower)) if valid else None
 
 
 def _cutoff(measured: list[SpectrumResult], profile: Profile) -> FactorResult:

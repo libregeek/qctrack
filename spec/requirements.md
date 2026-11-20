@@ -155,7 +155,7 @@ qctrack scan ~/Music --duplicates --html      # group and rank copies across the
 ```
 
 - **REQ-CLI-01 Inputs** `scan` accepts any mix of files and folders. Folders are always scanned recursively. Symbolic links to folders are not followed unless `--follow-links` is given, to avoid loops.
-- **REQ-CLI-02 Screen output (default)** Results are printed on screen: one line per track with file, album, title, sound score, rating, best-copy verdict, replacement action and gates, followed by a summary of counts per rating and per action, unsupported and errors.
+- **REQ-CLI-02 Screen output (default)** Results are printed on screen: one line per track with file, album, title, sound score, rating, replacement action and gates, followed by a summary of counts per rating and per action, unsupported and errors. The best-copy verdict, the action's reason and the flags appear with `-v` and in the HTML, CSV and JSON reports, to keep the table within a terminal's width.
 - **REQ-CLI-03 Report files** `--html[=FILE]`, `--csv[=FILE]` and `--json[=FILE]` write report files in any combination, in addition to the screen output. Without a file name they write `report.html`, `report.csv` and `report.json`. A custom name must use the `=` form (`--csv=library.csv`), so an input path is never mistaken for a file name. `--csv=-` writes CSV to standard output, which turns the screen output off.
 - **REQ-CLI-04 Output folder** `-o, --output-dir DIR` sets where default-named report files are written; the default is the current folder.
 - **REQ-CLI-05 Silent and verbose** `--silent` shows no results or progress on the terminal; errors still go to standard error and the exit code reports the outcome. `-v, --verbose` adds per-factor detail to the screen output.

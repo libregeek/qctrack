@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
+from qctrack.core.advice import Advice, advise
 from qctrack.core.decode_errors import DecodeErrors, mp3_decode_errors, vorbis_decode_errors
 from qctrack.core.detect import Detection, Format, detect_file
 from qctrack.core.factors import TrackMeasurements, factor_results
@@ -68,6 +69,8 @@ class TrackReport:
     size: int | None = None
     factors: list[FactorResult] = field(default_factory=list)
     score: TrackScore = field(default_factory=error_score)
+    #: Best-copy verdict, flags and replacement action; None when the file was not scored.
+    advice: Advice | None = None
 
     def to_measured(self) -> Measured:
         """The measurements this report was scored from, so it can be scored again."""
@@ -120,6 +123,10 @@ def score_measured(measured: Measured, profile: Profile) -> TrackReport:
         # (REQ-ANL-02), whatever share of the weight pass 1 happens to cover.
         if measured.measurements.decode_errors is None and report.score.status is Status.SCORED:
             report.score = replace(report.score, status=Status.PROVISIONAL)
+        if report.score.final_score is not None:
+            report.advice = advise(
+                measured.measurements, measured.tags, report.factors, report.score, profile
+            )
     return report
 
 

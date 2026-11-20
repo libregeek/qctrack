@@ -122,7 +122,8 @@ def test_scan_reports_failures_as_error_rows_and_finishes_the_rest(
     assert "Error" in rows["crash.mp3"] and "SIGSEGV" in rows["crash.mp3"]
     assert "Error" in rows["hang.mp3"] and "timed out after 3 s" in rows["hang.mp3"]
     assert "Error" not in rows["a.mp3"] and "Error" not in rows["z.mp3"]
-    assert "errors 2" in out.splitlines()[-1]
+    summary = next(line for line in out.splitlines() if line.startswith("4 files:"))
+    assert "errors 2" in summary
     assert list(rows) == ["a.mp3", "crash.mp3", "hang.mp3", "z.mp3"]  # input order kept
 
 

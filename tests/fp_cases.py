@@ -31,6 +31,8 @@ class Expect:
     ratings: frozenset[str] | None
     gates: tuple[str, ...] = ()
     status: str = "Scored"
+    #: Replacement action (requirements 5.9); None for files that are not scored.
+    action: str | None = None
 
 
 @dataclass(frozen=True)
@@ -143,33 +145,47 @@ def _dark(corner: int) -> str:
 
 CASES: tuple[Case, ...] = (
     # Genuine encodes: must not be rated poor.
-    Case("genuine_320.mp3", "baseline", Expect(frozenset("A")), _mp3("-b:a", "320k")),
-    Case("genuine_128.mp3", "C4", Expect(GOOD), _mp3("-b:a", "128k")),
-    Case("genuine_v0_ffmpeg.mp3", "N3", Expect(frozenset("A")), _mp3("-q:a", "0")),
-    Case("genuine_32khz_160.mp3", "C5", Expect(GOOD), _mp3("-ar", "32000", "-b:a", "160k")),
-    Case("genuine_112.mp3", "H5", Expect(GOOD), _mp3("-b:a", "112k")),
-    Case("mono_160.mp3", "H6", Expect(GOOD), _mp3("-ac", "1", "-b:a", "160k")),
-    Case("mono_in_stereo_320.mp3", "H6", Expect(GOOD),
+    Case("genuine_320.mp3", "baseline", Expect(frozenset("A"), action="Keep"),
+         _mp3("-b:a", "320k")),
+    Case("genuine_128.mp3", "C4", Expect(GOOD, action="Upgrade the encode"),
+         _mp3("-b:a", "128k")),
+    Case("genuine_v0_ffmpeg.mp3", "N3", Expect(frozenset("A"), action="Keep"),
+         _mp3("-q:a", "0")),
+    Case("genuine_32khz_160.mp3", "C5", Expect(GOOD, action="Upgrade the encode"),
+         _mp3("-ar", "32000", "-b:a", "160k")),
+    Case("genuine_112.mp3", "H5", Expect(GOOD, action="Upgrade the encode"),
+         _mp3("-b:a", "112k")),
+    Case("mono_160.mp3", "H6", Expect(GOOD, action="Keep"),
+         _mp3("-ac", "1", "-b:a", "160k")),
+    Case("mono_in_stereo_320.mp3", "H6", Expect(GOOD, action="Keep"),
          _mp3("-b:a", "320k", extra="pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1")),
-    Case("dark_9000_320.mp3", "N1", Expect(GOOD), _mp3("-b:a", "320k", extra=_dark(9000))),
-    Case("dark_5000_320.mp3", "N1", Expect(GOOD), _mp3("-b:a", "320k", extra=_dark(5000))),
-    Case("cut_short_frame_320.mp3", "C6", Expect(GOOD),
+    Case("dark_9000_320.mp3", "N1", Expect(GOOD, action="Keep: source-limited"),
+         _mp3("-b:a", "320k", extra=_dark(9000))),
+    Case("dark_5000_320.mp3", "N1", Expect(GOOD, action="Keep: source-limited"),
+         _mp3("-b:a", "320k", extra=_dark(5000))),
+    Case("cut_short_frame_320.mp3", "C6", Expect(GOOD, action="Keep"),
          _derived(_mp3("-b:a", "320k"), ".mp3", lambda b: b[:-200])),
-    Case("zero_padding_320.mp3", "H3", Expect(frozenset("A")),
+    Case("zero_padding_320.mp3", "H3", Expect(frozenset("A"), action="Keep"),
          _derived(_mp3("-b:a", "320k"), ".mp3", pad_after_id3)),
-    Case("vorbis_q6.ogg", "baseline", Expect(frozenset("A")), _vorbis("6")),
-    Case("vorbis_q1.ogg", "N2", Expect(NOT_POOR), _vorbis("1")),
-    Case("vorbis_no_eos.ogg", "C6", Expect(frozenset("A")),
+    Case("vorbis_q6.ogg", "baseline", Expect(frozenset("A"), action="Keep"),
+         _vorbis("6")),
+    Case("vorbis_q1.ogg", "N2", Expect(NOT_POOR, action="Upgrade the encode"),
+         _vorbis("1")),
+    Case("vorbis_no_eos.ogg", "C6", Expect(frozenset("A"), action="Keep"),
          _derived(_vorbis("6"), ".ogg", clear_eos)),
     # Real defects and transcodes: must still be caught. Since profile 2.0 a transcode's
     # sound score reflects how it sounds (its source); G4 sets the best-copy verdict.
-    Case("half_320.mp3", "C6", Expect(frozenset("F"), ("G2",)),
+    Case("half_320.mp3", "C6",
+         Expect(frozenset("F"), ("G2",), action="Replace: damaged"),
          _derived(_mp3("-b:a", "320k"), ".mp3", lambda b: b[: len(b) // 2])),
-    Case("half_vorbis.ogg", "C6", Expect(frozenset("F"), ("G2",)),
+    Case("half_vorbis.ogg", "C6",
+         Expect(frozenset("F"), ("G2",), action="Replace: damaged"),
          _derived(_vorbis("6"), ".ogg", lambda b: b[: len(b) // 2])),
-    Case("transcode_128_to_320.mp3", "N1", Expect(NOT_POOR, ("G4",)),
+    Case("transcode_128_to_320.mp3", "N1",
+         Expect(NOT_POOR, ("G4",), action="Replace: lossy source"),
          _transcode(_mp3("-b:a", "128k"), ".mp3")),
-    Case("transcode_vorbis_q2_to_320.mp3", "N1", Expect(NOT_POOR, ("G4",)),
+    Case("transcode_vorbis_q2_to_320.mp3", "N1",
+         Expect(NOT_POOR, ("G4",), action="Replace: lossy source"),
          _transcode(_vorbis("2"), ".ogg")),
     # Other formats named .mp3: never scored as broken MP3.
     Case("aac_in_mp4_named.mp3", "C8", Expect(None, ("G1",), "Unsupported"),

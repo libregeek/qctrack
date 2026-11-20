@@ -45,14 +45,17 @@ def header(profile: Profile, values: bool = False) -> list[str]:
         if values:
             cols.append(f"{col}_value")
     cols += [f"{o}_score" for o in OBJECTIVES]
-    cols += ["final_score", "rating", "gates_applied", "coverage_pct", "flags", "message"]
+    cols += ["final_score", "rating", "best_copy", "action", "action_reason"]
+    cols += ["gates_applied", "coverage_pct", "flags", "message"]
     cols += ["profile", "analyzer_version", "analyzed_at"]
     return cols
 
 
 def _flags(r: TrackReport) -> str:
+    if r.advice is not None:
+        return ";".join(r.advice.flags)
     flags = []
-    if r.measurements is not None:
+    if r.measurements is not None:  # scanned but not scored
         if not r.tags.formats:
             flags.append("no_tags")
         if r.tags.problems:
@@ -83,6 +86,9 @@ def row(r: TrackReport, profile: Profile, analyzed_at: str, values: bool = False
     cells += [
         _num(r.score.final_score),
         r.score.rating or "",
+        r.advice.best_copy.value if r.advice else "",
+        r.advice.action.value if r.advice else "",
+        r.advice.reason if r.advice else "",
         ";".join(r.score.gates),
         _num(r.score.coverage_pct) if r.score.coverage_pct or m else "",
         _flags(r),

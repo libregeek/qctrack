@@ -100,6 +100,13 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
   <div class="tile"><b>{{ unscored }}</b><span>unscored</span></div>
 {% endif %}
 </div>
+{% if actions %}
+<div class="tiles">
+{% for name, n in actions %}
+  <div class="tile"><b>{{ n }}</b><span>{{ name }}</span></div>
+{% endfor %}
+</div>
+{% endif %}
 {% if gates %}
 <ul class="legend">
 {% for gate, meaning in gates %}
@@ -144,6 +151,12 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
     <option value="Unsupported">Unsupported</option>
     <option value="Error">Error</option>
   </select>
+  <select id="action" aria-label="Filter by action" disabled>
+    <option value="">All actions</option>
+{% for name, n in actions %}
+    <option value="{{ name }}">{{ name }}</option>
+{% endfor %}
+  </select>
   <span id="count" role="status"></span>
   <noscript><span class="noscript">Sorting, filtering and details need JavaScript.</span></noscript>
 </div>
@@ -158,11 +171,13 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
   <th data-col="5"><button type="button">Codec</button></th>
   <th data-col="6" class="num"><button type="button">Score</button></th>
   <th data-col="7"><button type="button">Rating</button></th>
-  <th data-col="8"><button type="button">Gates</button></th>
+  <th data-col="8"><button type="button">Best copy</button></th>
+  <th data-col="9"><button type="button">Action</button></th>
+  <th data-col="10"><button type="button">Gates</button></th>
 </tr></thead>
 <tbody>
 {% for r in rows %}
-<tr data-i="{{ r.index }}" data-rating="{{ r.rating.rstrip('*') }}"><td><button type="button" class="toggle" aria-expanded="false" aria-label="Show details" hidden></button></td><td>{{ r.album }}</td><td>{{ r.title }}</td><td>{{ r.artist }}</td><td class="path">{{ r.path }}</td><td>{{ r.codec }}</td><td class="num" data-sort="{{ r.score_sort }}">{{ r.score }}</td><td><span class="badge r-{{ r.rating_class }}">{{ r.rating }}</span></td><td>{{ r.gates }}</td></tr>
+<tr data-i="{{ r.index }}" data-rating="{{ r.rating.rstrip('*') }}" data-action="{{ r.action }}"><td><button type="button" class="toggle" aria-expanded="false" aria-label="Show details" hidden></button></td><td>{{ r.album }}</td><td>{{ r.title }}</td><td>{{ r.artist }}</td><td class="path">{{ r.path }}</td><td>{{ r.codec }}</td><td class="num" data-sort="{{ r.score_sort }}">{{ r.score }}</td><td><span class="badge r-{{ r.rating_class }}">{{ r.rating }}</span></td><td>{{ r.best_copy }}</td><td data-sort="{{ r.action_sort }}">{{ r.action }}</td><td>{{ r.gates }}</td></tr>
 {% endfor %}
 </tbody>
 </table>
@@ -181,6 +196,7 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
   var rows = Array.prototype.slice.call(body.rows);
   var q = document.getElementById("q");
   var ratingSel = document.getElementById("rating");
+  var actionSel = document.getElementById("action");
   var count = document.getElementById("count");
   var text = [];  // lower-cased row text, filled on first use
   var sortCol = null, sortDir = 1;
@@ -236,6 +252,14 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
     facts.push("coverage " + t.cov + "%");
     box.appendChild(el("p", "note", facts.join(" · ")));
     box.appendChild(objs);
+    if (t.adv) {
+      var adv = el("p", "note");
+      adv.appendChild(el("b", null, t.adv[1]));
+      adv.appendChild(document.createTextNode(
+        (t.adv[2] ? ": " + t.adv[2] : "") + " · best copy: " + t.adv[0] +
+        (t.adv[3].length ? " · flags: " + t.adv[3].join(", ") : "")));
+      box.appendChild(adv);
+    }
     if (t.tags) box.appendChild(el("p", "note", "Tag problems: " + t.tags.join("; ")));
     if (t.sg) box.appendChild(buildSpectrogram(t.sg));
     if (t.f.length) {
@@ -273,7 +297,7 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
     }
     var tr = el("tr", "detail");
     var td = el("td");
-    td.colSpan = 9;
+    td.colSpan = 11;
     td.appendChild(buildDetail(+row.getAttribute("data-i")));
     tr.appendChild(td);
     row.after(tr);
@@ -284,10 +308,12 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
     closeDetails();
     var needle = q.value.trim().toLowerCase();
     var rating = ratingSel.value;
+    var action = actionSel.value;
     if (needle && !text.length) rows.forEach(function (r) { text.push(r.textContent.toLowerCase()); });
     var shown = 0;
     rows.forEach(function (r, k) {
       var ok = (!rating || r.getAttribute("data-rating") === rating) &&
+               (!action || r.getAttribute("data-action") === action) &&
                (!needle || text[k].indexOf(needle) !== -1);
       r.hidden = !ok;
       if (ok) shown++;
@@ -297,7 +323,7 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
 
   function key(r, col) {
     var c = r.cells[col];
-    if (col === 6) { var s = c.getAttribute("data-sort"); return s === "" ? null : parseFloat(s); }
+    if (col === 6 || col === 9) { var s = c.getAttribute("data-sort"); return s === "" ? null : parseFloat(s); }
     var t = c.textContent.toLowerCase();
     return t === "" ? null : t;
   }
@@ -330,8 +356,10 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
   rows.forEach(function (r) { r.firstChild.firstChild.hidden = false; });
   q.disabled = false;
   ratingSel.disabled = false;
+  actionSel.disabled = false;
   q.addEventListener("input", applyFilter);
   ratingSel.addEventListener("change", applyFilter);
+  actionSel.addEventListener("change", applyFilter);
   document.querySelector("#tracks thead").addEventListener("click", function (e) {
     var th = e.target.closest("th[data-col]");
     if (th) sortBy(+th.getAttribute("data-col"));

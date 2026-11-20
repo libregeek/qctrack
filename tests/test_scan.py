@@ -181,7 +181,7 @@ def test_scan_prints_an_aligned_table_and_a_summary(
     assert main(["scan", str(library)]) == 1  # the opus and the fake mp3 are Unsupported
     lines = capsys.readouterr().out.splitlines()
     header, rule, *rest = lines
-    assert header.split()[:6] == ["File", "Album", "Title", "Score", "Rating", "Gates"]
+    assert header.split()[:7] == ["File", "Album", "Title", "Score", "Rating", "Action", "Gates"]
     assert set(rule.replace(" ", "")) == {"-"}
     rows = rest[:6]
     assert [Path(r.split()[0]).name for r in rows] == sorted(
@@ -193,7 +193,8 @@ def test_scan_prints_an_aligned_table_and_a_summary(
     assert by_name["a.mp3"][end - 4 : end].strip().replace(".", "").isdigit()
     assert "Unsupported" in by_name["o.opus"] and "Notes" in header
     assert "Opus" in by_name["o.opus"]
-    assert lines[-2].startswith("6 files:") and "unsupported 2" in lines[-2]
+    assert lines[-3].startswith("6 files:") and "unsupported 2" in lines[-3]
+    assert lines[-2].startswith("Actions: ") and "Replace: lossy source 1" in lines[-2]
     assert lines[-1].startswith("Gates: G1 ")
 
 
@@ -202,13 +203,15 @@ def test_scan_exit_code_is_zero_when_everything_is_analysed(
 ) -> None:
     assert main(["scan", str(library / "a.mp3"), str(library / "v.ogg")]) == 0
     out = capsys.readouterr().out
-    assert out.splitlines()[-1].startswith("2 files:") and "Notes" not in out
+    assert out.splitlines()[-2].startswith("2 files:") and "Notes" not in out
+    assert out.splitlines()[-1] == "Actions: Keep 2"
 
 
 def test_verbose_lists_every_factor(library: Path, capsys: pytest.CaptureFixture[str]) -> None:
     main(["scan", "-v", str(library / "a.mp3")])
     out = capsys.readouterr().out
     assert "F3.02" in out and "objectives:" in out and "coverage 100%" in out
+    assert "best copy: Best available likely" in out and "action: Keep" in out
 
 
 def test_scan_uses_the_given_profile_and_rejects_a_bad_one(
@@ -239,7 +242,7 @@ def test_legend_follows_the_summary_and_explains_only_the_gates_shown(
 ) -> None:
     main(["scan", str(library)])  # has Unsupported files (G1) and a band-limited 320 (G4)
     lines = capsys.readouterr().out.splitlines()
-    assert lines[-2].startswith("6 files:")
+    assert lines[-3].startswith("6 files:") and lines[-2].startswith("Actions: ")
     legend = lines[-1]
     assert legend.startswith("Gates: G1 format not supported yet, not scored; G4 ")
     assert "sets the best-copy verdict" in legend and "capped" not in legend
@@ -249,7 +252,8 @@ def test_legend_follows_the_summary_and_explains_only_the_gates_shown(
 def test_no_legend_when_no_gate_applies(library: Path, capsys: pytest.CaptureFixture[str]) -> None:
     main(["scan", str(library / "a.mp3")])
     out = capsys.readouterr().out
-    assert "Gates:" not in out.splitlines()[-1] and out.splitlines()[-1].startswith("1 files:")
+    assert "Gates:" not in out and out.splitlines()[-2].startswith("1 files:")
+    assert out.splitlines()[-1] == "Actions: Keep 1"
 
 
 def test_legend_uses_the_caps_of_the_active_profile(
