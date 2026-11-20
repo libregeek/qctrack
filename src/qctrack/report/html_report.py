@@ -204,6 +204,23 @@ def write_html(
     used_gates = sorted({g for r in reports for g in r.score.gates})
     legend = gate_legend(profile)
     bars, scored = _histogram(reports)
+    groups: dict[int, list[TrackReport]] = {}
+    for r in reports:
+        if r.copy_group is not None:
+            groups.setdefault(r.copy_group, []).append(r)
+    copy_groups = [
+        (
+            n,
+            next((r.copy_note for r in members if r.copy_rank == 1), ""),
+            "different_masters" in (members[0].advice.flags if members[0].advice else ()),
+            [
+                (r.copy_rank, str(r.path), _num(r.score.final_score) or "-", r.score.rating or "",
+                 r.advice.action.value if r.advice else "")
+                for r in sorted(members, key=lambda r: r.copy_rank or 0)
+            ],
+        )
+        for n, members in sorted(groups.items())
+    ]  # fmt: skip
     weights = {f: w for f, w in profile.factors.items()}
     data = {
         "objectives": [[o, OBJECTIVE_NAMES[o], profile.objectives[o]] for o in OBJECTIVES],
@@ -223,6 +240,7 @@ def write_html(
             errors=status[Status.ERROR],
             unscored=status[Status.UNSCORED],
             gates=[(g, legend[g]) for g in used_gates],
+            copy_groups=copy_groups,
             bars=bars,
             scored=scored,
             profile=profile,

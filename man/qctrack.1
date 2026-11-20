@@ -1,9 +1,9 @@
-.TH QCTRACK "1" "2026\-11\-19" "qctrack 0.1.0" "qctrack"
+.TH QCTRACK "1" "2026\-11\-20" "qctrack 0.1.0" "qctrack"
 .SH NAME
 qctrack \- audio quality scoring and fake\-bitrate detection
 .SH SYNOPSIS
 .B qctrack
-[-h] [--version] {scan,rescore,profile} ...
+[-h] [--version] {scan,compare,rescore,profile} ...
 .SH DESCRIPTION
 Audio quality scoring and fake\-bitrate detection.
 
@@ -12,6 +12,9 @@ POSITIONAL ARGUMENTS
 .TP
 \fBqctrack\fR \fI\,scan\/\fR
 analyse files and folders
+.TP
+\fBqctrack\fR \fI\,compare\/\fR
+rank copies of one track and say which to keep
 .TP
 \fBqctrack\fR \fI\,rescore\/\fR
 score a saved report.json again with another profile, without the audio
@@ -25,6 +28,7 @@ usage: qctrack scan [\-h] [\-\-fail\-below SCORE] [\-\-color {auto,always,never}
                     [\-\-json [FILE]] [\-\-spectrograms] [\-o DIR] [\-\-silent]
                     [\-\-profile PROFILE] [\-v] [\-\-quick] [\-j N]
                     [\-\-timeout SECONDS] [\-\-no\-cache] [\-\-follow\-links]
+                    [\-\-duplicates]
                     paths [paths ...]
 
 .TP
@@ -106,11 +110,95 @@ ignore and do not update the result cache
 \fB\-\-follow\-links\fR
 follow symbolic links to folders
 
+.TP
+\fB\-\-duplicates\fR
+group copies of the same track (same artist and title, durations within 2 s)
+and say which copy to keep
+
+.SH COMMAND \fI\,'qctrack compare'\/\fR
+usage: qctrack compare [\-h] [\-\-fail\-below SCORE] [\-\-color {auto,always,never}]
+                       [\-\-csv [FILE]] [\-\-csv\-values] [\-\-csv\-bom]
+                       [\-\-html [FILE]] [\-\-json [FILE]] [\-\-spectrograms]
+                       [\-o DIR] [\-\-silent] [\-\-profile PROFILE] [\-v] [\-j N]
+                       [\-\-timeout SECONDS] [\-\-no\-cache]
+                       files [files ...]
+
+.TP
+\fBfiles\fR
+two or more copies of one track
+
+.SH OPTIONS \fI\,'qctrack compare'\/\fR
+.TP
+\fB\-\-fail\-below\fR \fI\,SCORE\/\fR
+exit with code 4 if any track scores below SCORE (0\-100)
+
+.TP
+\fB\-\-color\fR \fI\,{auto,always,never}\/\fR
+colour output; auto = on for a terminal unless NO_COLOR is set (default)
+
+.TP
+\fB\-\-csv\fR \fI\,[FILE]\/\fR
+also write a CSV report (default report.csv); \-\-csv=\- writes it to standard
+output and turns the screen output off
+
+.TP
+\fB\-\-csv\-values\fR
+add a measured\-value column next to each factor score in the CSV
+
+.TP
+\fB\-\-csv\-bom\fR
+start the CSV file with a UTF\-8 byte\-order mark
+
+.TP
+\fB\-\-html\fR \fI\,[FILE]\/\fR
+also write a self\-contained HTML report (default report.html); \-\-html=\- writes
+it to standard output and turns the screen output off
+
+.TP
+\fB\-\-json\fR \fI\,[FILE]\/\fR
+also write a JSON report with every measurement and score (default
+report.json); \-\-json=\- writes it to standard output and turns the screen
+output off
+
+.TP
+\fB\-\-spectrograms\fR
+embed a spectrogram image per track in the HTML report (needs python3\-pillow;
+makes the scan slower and the report larger)
+
+.TP
+\fB\-o\fR \fI\,DIR\/\fR, \fB\-\-output\-dir\fR \fI\,DIR\/\fR
+folder for report files with default names (default: current folder)
+
+.TP
+\fB\-\-silent\fR
+no results or progress on the terminal
+
+.TP
+\fB\-\-profile\fR \fI\,PROFILE\/\fR
+scoring profile (default: user or bundled)
+
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+show measurements
+
+.TP
+\fB\-j\fR \fI\,N\/\fR, \fB\-\-jobs\fR \fI\,N\/\fR
+parallel workers
+
+.TP
+\fB\-\-timeout\fR \fI\,SECONDS\/\fR
+time budget per file (default 300); a slower file is an Error
+
+.TP
+\fB\-\-no\-cache\fR
+ignore and do not update the result cache
+
 .SH COMMAND \fI\,'qctrack rescore'\/\fR
 usage: qctrack rescore [\-h] [\-\-fail\-below SCORE] [\-\-color {auto,always,never}]
                        [\-\-csv [FILE]] [\-\-csv\-values] [\-\-csv\-bom]
                        [\-\-html [FILE]] [\-\-json [FILE]] [\-\-spectrograms]
                        [\-o DIR] [\-\-silent] [\-\-profile PROFILE] [\-v]
+                       [\-\-duplicates]
                        [file]
 
 .TP
@@ -170,6 +258,10 @@ scoring profile (default: user or bundled)
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
 show measurements
+
+.TP
+\fB\-\-duplicates\fR
+group copies of the same track, as for scan
 
 .SH COMMAND \fI\,'qctrack profile'\/\fR
 usage: qctrack profile [\-h] {show\-default,validate} ...
@@ -253,6 +345,22 @@ Rescore saved measurements with another profile, without the audio:
 .nf
 qctrack scan ~/Music \-\-json
 qctrack rescore \-\-profile strict.toml
+.fi
+.RE
+.PP
+Decide which of two copies of a track to keep:
+.PP
+.RS
+.nf
+qctrack compare old/song.mp3 new/song.ogg
+.fi
+.RE
+.PP
+Find copies of the same track across a library and rank each group:
+.PP
+.RS
+.nf
+qctrack scan ~/Music \-\-duplicates \-\-html
 .fi
 .RE
 

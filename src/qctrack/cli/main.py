@@ -25,6 +25,7 @@ from qctrack.cli.table import format_table
 from qctrack.cli.workers import DEFAULT_MEMORY_MB, DEFAULT_TIMEOUT_S, WorkerPool
 from qctrack.core.analyze import Measured, TrackReport, score_measured
 from qctrack.core.cache import CacheError, ResultCache, file_key
+from qctrack.core.copies import CopyGroup, apply_groups, find_duplicates, rank
 from qctrack.core.detect import Detection
 from qctrack.core.mp3scan import Mp3Scan
 from qctrack.core.oggscan import OggScan
@@ -103,6 +104,29 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument(
         "--follow-links", action="store_true", help="follow symbolic links to folders"
     )
+    scan.add_argument(
+        "--duplicates",
+        action="store_true",
+        help="group copies of the same track (same artist and title, durations within 2 s) "
+        "and say which copy to keep",
+    )
+    compare = sub.add_parser(
+        "compare",
+        parents=[common],
+        help="rank copies of one track and say which to keep",
+    )
+    compare.add_argument("files", nargs="+", type=Path, help="two or more copies of one track")
+    compare.add_argument("-j", "--jobs", type=_positive_int, metavar="N", help="parallel workers")
+    compare.add_argument(
+        "--timeout",
+        type=_positive_float,
+        default=DEFAULT_TIMEOUT_S,
+        metavar="SECONDS",
+        help=f"time budget per file (default {DEFAULT_TIMEOUT_S:g}); a slower file is an Error",
+    )
+    compare.add_argument(
+        "--no-cache", action="store_true", help="ignore and do not update the result cache"
+    )
     rescore = sub.add_parser(
         "rescore",
         parents=[common],
@@ -113,6 +137,9 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         type=Path,
         help="report.json to read (default: report.json in the output folder)",
+    )
+    rescore.add_argument(
+        "--duplicates", action="store_true", help="group copies of the same track, as for scan"
     )
     profile = sub.add_parser("profile", help="scoring profiles")
     psub = profile.add_subparsers(dest="profile_command", required=True)
@@ -394,6 +421,22 @@ def _legend(reports: Sequence[TrackReport], profile: Profile, paint: Painter) ->
     return f"{paint('Gates:', 'bold')} {items}"
 
 
+def _print_groups(groups: Sequence[CopyGroup], paint: Painter) -> None:
+    """The copy groups of ``compare`` or ``--duplicates``: the copy to keep, then the rest
+    in rank order."""
+    if not groups:
+        return
+    print()
+    print(paint("Copy groups:", "bold"))
+    for g in groups:
+        note = " (likely different masters)" if g.different_masters else ""
+        print(f"  {g.number}. {g.summary}{note}")
+        for r in g.members:
+            action = r.advice.action.value if r.advice else ""
+            score = f"{r.score.final_score:.1f}" if r.score.final_score is not None else "-"
+            print(f"     {r.copy_rank}. {r.path}  {score} {r.score.rating or ''}  {action}")
+
+
 def _print_details(report: TrackReport, paint: Painter) -> None:
     m = report.measurements
     if m is None:
@@ -480,6 +523,48 @@ def _scan(args: argparse.Namespace) -> int:
     except ProfileError as e:
         print(f"qctrack: {e}", file=sys.stderr)
         return EXIT_USAGE
+    reports = _analyse(args, args.paths, profile)
+    if isinstance(reports, int):
+        return reports
+    groups = find_duplicates(reports, profile) if args.duplicates else []
+    apply_groups(groups)
+    return _finish(args, reports, profile, analyzed_at=now_iso(), quick=args.quick, groups=groups)
+
+
+def _compare(args: argparse.Namespace) -> int:
+    problem = check_options(args)
+    if problem:
+        print(f"qctrack: {problem}", file=sys.stderr)
+        return EXIT_USAGE
+    if len(args.files) < 2:
+        print("qctrack: compare needs at least two files", file=sys.stderr)
+        return EXIT_USAGE
+    folders = [str(p) for p in args.files if p.is_dir()]
+    if folders:
+        print(f"qctrack: compare takes files, not folders: {folders[0]}", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        profile = resolve_profile(args.profile)
+    except ProfileError as e:
+        print(f"qctrack: {e}", file=sys.stderr)
+        return EXIT_USAGE
+    args.quick, args.follow_links = False, False
+    reports = _analyse(args, args.files, profile)
+    if isinstance(reports, int):
+        return reports
+    group = rank(reports, profile)
+    for warning in group.warnings:
+        print(f"qctrack: warning: {warning}", file=sys.stderr)
+    groups = [group] if len(group.members) >= 2 else []
+    apply_groups(groups)
+    return _finish(args, reports, profile, analyzed_at=now_iso(), quick=False, groups=groups)
+
+
+def _analyse(
+    args: argparse.Namespace, paths: Sequence[Path], profile: Profile
+) -> list[TrackReport] | int:
+    """Passes 1-3 for every file under ``paths``, through the cache and the worker pool.
+    Returns the reports in discovery order, or an exit code when interrupted or refused."""
     spectrograms = args.spectrograms
     if spectrograms and args.quick:
         print(
@@ -490,11 +575,11 @@ def _scan(args: argparse.Namespace) -> int:
     if spectrograms and importlib.util.find_spec("PIL") is None:
         print("qctrack: --spectrograms needs Pillow (install python3-pillow)", file=sys.stderr)
         return EXIT_USAGE
-    files = list(discover(args.paths, args.follow_links))
+    files = list(discover(paths, args.follow_links))
     by_index: dict[int, TrackReport] = {}
     jobs = args.jobs
     if jobs is None:
-        kinds = [classify(p) for p in args.paths]
+        kinds = [classify(p) for p in paths]
         jobs = default_jobs(kinds)
         if args.verbose:
             print(f"qctrack: {jobs} worker(s), storage: {describe_storage(kinds)}", file=sys.stderr)
@@ -530,8 +615,7 @@ def _scan(args: argparse.Namespace) -> int:
     finally:
         if cache is not None:
             cache.close()
-    reports = [by_index[i] for i in sorted(by_index)]  # discovery order
-    return _finish(args, reports, profile, analyzed_at=now_iso(), quick=args.quick)
+    return [by_index[i] for i in sorted(by_index)]  # discovery order
 
 
 def _finish(
@@ -541,11 +625,14 @@ def _finish(
     *,
     analyzed_at: str,
     quick: bool,
+    groups: Sequence[CopyGroup] = (),
 ) -> int:
-    """Screen output, report files and the exit code, for ``scan`` and ``rescore``."""
+    """Screen output, report files and the exit code, for ``scan``, ``compare`` and
+    ``rescore``."""
     paint = Painter(should_color(args.color, sys.stdout))
     if not screen_off(args):
         _print_screen(reports, profile, paint, args.verbose)
+        _print_groups(groups, paint)
     try:
         write_reports(args, reports, profile, analyzed_at=analyzed_at, quick=quick)
     except OSError as e:
@@ -594,7 +681,11 @@ def _rescore(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
     reports = [score_measured(m, profile) for m in saved.tracks]
-    return _finish(args, reports, profile, analyzed_at=saved.analyzed_at, quick=saved.quick)
+    groups = find_duplicates(reports, profile) if args.duplicates else []
+    apply_groups(groups)
+    return _finish(
+        args, reports, profile, analyzed_at=saved.analyzed_at, quick=saved.quick, groups=groups
+    )
 
 
 def _profile(args: argparse.Namespace) -> int:
@@ -618,6 +709,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _scan(args)
         if args.command == "rescore":
             return _rescore(args)
+        if args.command == "compare":
+            return _compare(args)
         if args.command == "profile":
             return _profile(args)
     except BrokenPipeError:

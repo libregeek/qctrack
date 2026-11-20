@@ -46,7 +46,7 @@ def header(profile: Profile, values: bool = False) -> list[str]:
             cols.append(f"{col}_value")
     cols += [f"{o}_score" for o in OBJECTIVES]
     cols += ["final_score", "rating", "best_copy", "action", "action_reason"]
-    cols += ["gates_applied", "coverage_pct", "flags", "message"]
+    cols += ["gates_applied", "coverage_pct", "flags", "copy_group", "copy_rank", "message"]
     cols += ["profile", "analyzer_version", "analyzed_at"]
     return cols
 
@@ -92,6 +92,8 @@ def row(r: TrackReport, profile: Profile, analyzed_at: str, values: bool = False
         ";".join(r.score.gates),
         _num(r.score.coverage_pct) if r.score.coverage_pct or m else "",
         _flags(r),
+        "" if r.copy_group is None else str(r.copy_group),
+        "" if r.copy_rank is None else str(r.copy_rank),
         r.message,
         profile.label,
         __version__,

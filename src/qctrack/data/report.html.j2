@@ -140,6 +140,18 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
 <p class="note">No track has a final score.</p>
 {% endif %}
 
+{% if copy_groups %}
+<h2>Copy groups</h2>
+{% for number, note, masters, members in copy_groups %}
+<h3>{{ number }}. {{ note }}{% if masters %} (likely different masters){% endif %}</h3>
+<table class="ftable"><thead><tr><th class="num">Rank</th><th>File</th><th class="num">Score</th><th>Rating</th><th>Action</th></tr></thead><tbody>
+{% for rank, path, score, rating, action in members %}
+<tr><td class="num">{{ rank }}</td><td class="path">{{ path }}</td><td class="num">{{ score }}</td><td>{{ rating }}</td><td>{{ action }}</td></tr>
+{% endfor %}
+</tbody></table>
+{% endfor %}
+{% endif %}
+
 <h2>Tracks</h2>
 <div class="controls">
   <input id="q" type="search" placeholder="Filter by album, title, artist, file or codec" aria-label="Filter tracks" disabled>

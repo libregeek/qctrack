@@ -71,6 +71,11 @@ class TrackReport:
     score: TrackScore = field(default_factory=error_score)
     #: Best-copy verdict, flags and replacement action; None when the file was not scored.
     advice: Advice | None = None
+    #: Set by ``compare`` and ``--duplicates`` (``core.copies``): the copy group, the rank
+    #: within it (1 = keep) and, on rank 1, the decision line.
+    copy_group: int | None = None
+    copy_rank: int | None = None
+    copy_note: str = ""
 
     def to_measured(self) -> Measured:
         """The measurements this report was scored from, so it can be scored again."""

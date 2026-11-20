@@ -59,3 +59,19 @@ qctrack scan ~/Music \-\-json
 qctrack rescore \-\-profile strict.toml
 .fi
 .RE
+.PP
+Decide which of two copies of a track to keep:
+.PP
+.RS
+.nf
+qctrack compare old/song.mp3 new/song.ogg
+.fi
+.RE
+.PP
+Find copies of the same track across a library and rank each group:
+.PP
+.RS
+.nf
+qctrack scan ~/Music \-\-duplicates \-\-html
+.fi
+.RE
