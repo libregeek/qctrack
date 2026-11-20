@@ -56,6 +56,12 @@ The claimed band comes from the bitrate table, except that a LAME preset sets it
 
 These cutoffs and presets come from a single clip, and V1, V3, V5 and V7 were not measured, so they are starting values to tune with T10 and T11.
 
+Three rules guard F3.02 and gate G4 against genuine files (added Nov 20, 2026; see `spec-review-false-positives.md`, findings C5 and N1):
+
+- **Sample rate.** The bands assume 44.1 or 48 kHz. Below 44.1 kHz the cutoff is bounded by Nyquist rather than by the source, so F3.01 and F3.02 are not evaluated; F1.03 scores the rate.
+- **Real cliff only.** Without a measured cliff the content is full band, whatever value the cutoff field holds.
+- **Fade before the wall.** When a source's high frequencies are already faint, LAME codes nothing in its top scalefactor band (sfb21, from about 16 kHz at 44.1 kHz), even at 320 kbps, leaving a wall near 16 kHz. Such a wall is reached only after the content has faded, while a transcode's content runs at close to its normal level up to the wall. The fade is the drop in the smoothed spectrum from 0.6–0.75 × the cutoff to the plateau just below the wall. A fade of 12 dB or more turns an F3.02 Fail into a Warn, with no G4. On test signals, transcodes from 112 and 128 kbps MP3 and Vorbis q2 faded 2–6 dB, and genuine 320 kbps encodes of dark sources 23–30 dB. Known limit: transcodes from sources that already had faded highs (96 kbps, V5) fade 16–23 dB and get only a Warn. Tune the threshold with T10 and T11.
+
 Formats below list the method for each format. "Adapted" means the factor applies with a codec-specific method or limited value.
 
 ## O1 Metadata & encoding
@@ -286,6 +292,8 @@ Lossless resolution claim (16 / 24-bit).
 
 Whether the stream is structurally sound and the audio signal is technically healthy.
 
+Since Nov 20, 2026 (requirements section 5.3), F2.07–F2.10 are scored in the new objective O4 Mastering. They keep their IDs and are listed here.
+
 ### F2.01 Stream structure validity
 
 Core structural integrity of the container and frames.
@@ -316,13 +324,13 @@ Incomplete downloads or cut files.
 - **False-verdict risk:** Low. Low.
 - **Priority:** MVP
 - **Reference:** mpck, ogginfo
-- **Method:** Check the stream ends cleanly.
-- **Thresholds:** Pass: Complete; Fail: Truncated
+- **Method:** Check the stream ends cleanly, and measure how much audio is missing where the file declares its length.
+- **Thresholds:** Pass: Complete; Warn: Ends inside its last frame or page, or a small declared-length shortfall; Fail: Material loss (only Fail triggers gate G2)
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |
-| MP3 | Applies | Last frame complete and matches header length. | — |
-| Ogg Vorbis | Applies | Final page complete and carries the end-of-stream flag. | — |
+| MP3 | Applies | Last frame complete; frames counted against the Xing/Info/VBRI frame count. | Fail: declared frames missing for more than max(1 s, 1% of the declared length); Warn: last frame cut short (at most one frame, 26 ms at 44.1 kHz) or a smaller shortfall. Without a declared count a large loss cannot be measured, so a cut-short frame stays a Warn. |
+| Ogg Vorbis | Applies | Final page complete; end-of-stream flag on the last stream. | Fail: final page cut off and the stream never ends; Warn: a cut-off page after a stream that ended; Pass (noted): complete final page without the end-of-stream flag, which some encoders and stream recorders never set. |
 | FLAC | Applies | Final frame complete; decoded total matches STREAMINFO. | — |
 | Opus | Applies | Final page complete and carries the end-of-stream flag. | — |
 
@@ -570,6 +578,8 @@ Chained or multiplexed streams and granule gaps break players and length reporti
 
 Whether the audio content matches the quality the file claims.
 
+Since Nov 20, 2026 (requirements sections 5.3 and 5.8), only F3.01 counts in the sound score. F3.02–F3.07 and F3.10 are evidence for the best-copy verdict, and G4 sets that verdict instead of capping the score.
+
 ### F3.01 Measured spectral cutoff
 
 Real audio bandwidth, the main evidence of source quality.
@@ -732,7 +742,7 @@ Visual evidence users trust and can verify.
 
 ### F3.09 Overall confidence score
 
-Superseded: REQ-FAC-03 makes this the O3 objective score.
+Superseded: REQ-FAC-03 makes this the best-copy verdict (requirements section 5.8).
 
 - **Input:** Derived
 - **Metric:** 0–100 + reasons

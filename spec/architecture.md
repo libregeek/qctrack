@@ -77,7 +77,7 @@ qctrack/
 1. **Detect:** in-house code reads the file's leading bytes and, for Ogg, the first packet of each stream. The file extension is never consulted to decide a format (REQ-FMT-04), so Mutagen's name-based `File()` helper is not used. When scanning a folder, a fixed list of audio extensions only chooses which files to examine; files named on the command line are always examined. Opus, FLAC and Speex streams become Unsupported in phase 1 (REQ-FMT-02).
 2. **Pass 1:** a per-codec scanner walks the raw bytes and headers, and Mutagen reads tags and encoder details. `--quick` stops here (REQ-ANL-02).
 3. **Pass 2:** decode once and send fixed-size NumPy blocks to each `PcmFactor`, so memory stays bounded (REQ-NFR-03).
-4. **Pass 3:** in the parent, compute derived factors and apply the profile. This step is a pure function of the measurements and the profile.
+4. **Pass 3:** in the parent, compute derived factors and apply the profile. This step is a pure function of the measurements and the profile. It also gives the best-copy verdict and the replacement action, and, for `compare` and `--duplicates`, groups and ranks copies (requirements sections 4.5 and 5.7–5.10).
 
 ### 4.2 Core types
 
@@ -178,7 +178,7 @@ This covers the phase 1 factors. F1.11 and F3.10 are FLAC only and arrive in pha
 | F2.01–F2.03 Structure, truncation, unidentified data | In-house MP3 scanner; `libogg` for Ogg pages. Known tags, including Lyrics3 and APE, count as metadata rather than damage. |
 | F2.04 Embedded audio checksum | CRC-16 over the audio, using `python3-crcmod` if it qualifies (Q-A6) |
 | F2.05 Block-level CRC | CRC-16 for MP3 frames; `libogg` page checks for Ogg |
-| F2.06 Decode errors | `libmpg123`: its stderr text (`broken frame N` counts concealed frames; `Illegal Audio-MPEG-Header … at offset N` is a lost sync, ignored when the offset is at or past the scanner's end of audio, so trailing ID3v1, APE and Lyrics3 tags are not errors). `libvorbisfile`: `OV_HOLE` count. Both decoders drop a final partial unit silently, so the scanner's truncated tail counts as one error (overlaps F2.02 by design). Code in `core/decode_errors.py`. |
+| F2.06 Decode errors | `libmpg123`: its stderr text (`broken frame N` counts concealed frames; `Illegal Audio-MPEG-Header … at offset N` is a lost sync, ignored when the offset is at or past the scanner's end of audio, so trailing ID3v1, APE and Lyrics3 tags are not errors). `libvorbisfile`: `OV_HOLE` count. Both decoders drop a final partial unit silently; the scanner's truncated tail is recorded but scored only by F2.02, so truncation costs points once. Code in `core/decode_errors.py`. |
 | F2.07, F2.12 Clipping, channel anomalies | In-house NumPy analysis |
 | F2.08–F2.10 Peak, loudness, dynamic range | `libebur128`: true peak, integrated loudness, loudness range. Peak-to-loudness ratio is derived from these. |
 | F2.14 Ogg stream layout | `libogg` |
@@ -289,6 +289,7 @@ No qualifying library was found for these, so they are project code.
 | Spectral factors (F3.01, F3.04, F3.06) | These are qctrack's own heuristics, built on `numpy.fft`. |
 | Clipping and channel analysis (F2.07, F2.12) | Short NumPy operations, with definitions specific to qctrack. |
 | Scoring, gates and profile merging | Core project logic defined in section 5 of the requirements. |
+| Best-copy verdict, replacement actions, copy ranking and duplicate grouping | qctrack's own rules (requirements sections 4.5 and 5.7–5.10). Grouping by normalised tags and duration needs only `unicodedata` from the standard library. `beets` (2.14.1, in Fedora, checked 2026-11-20) can find duplicates, but only through its own library database and import workflow, which is far more than this needs. Acoustic fingerprinting with `libchromaprint` (1.6.1, in Fedora) is deferred (requirements Q13). |
 | `--html[=FILE]` handling | `argparse` would take the next path as the file name, which REQ-CLI-03 forbids. A few lines expand the bare option before parsing. |
 | Line numbers in profile errors | `tomllib` reports lines only for syntax errors, and REQ-PRF-05 needs them for invalid values too. |
 | HTML sorting and filtering script | Plain JavaScript inlined in the report, since it must work offline with no network requests (REQ-HTM-01). |
