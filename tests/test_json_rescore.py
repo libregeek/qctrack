@@ -99,6 +99,8 @@ def test_rescore_with_same_profile_reproduces_the_csv_without_the_audio(
                 "--silent",
                 "--csv-values",
                 "--csv",
+                "-o",
+                str(tmp_path),  # never the folder pytest runs from
                 f"--json={tmp_path / 'again.json'}",
             ]
         )
