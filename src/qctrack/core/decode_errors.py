@@ -11,9 +11,8 @@ Neither decoder reports concealed damage through an error code:
   ``VorbisDecoder.holes``. :func:`vorbis_decode_errors` takes that count.
 
 Both decoders also drop a final unit that the file ends in the middle of, without a word.
-The scanners already measure that tail, so it is added here as one error: the decoder was
-given data and could not use it. It overlaps with F2.02 (truncation) by design; the
-scoring layer sees both, and F2.02 alone drives the gate.
+The scanners already measure that tail and F2.02 (truncation) scores it, so here it is only
+recorded (``partial_tail``) and not counted: a cut-off file loses points once, not twice.
 
 Counts are reported; Pass/Warn/Fail (0 / 1-5 / more than 5) belongs to scoring.
 """
@@ -43,7 +42,8 @@ class DecodeErrors:
     concealed: int = 0
     #: MP3: places where sync was lost that no known tag explains.
     resyncs: int = 0
-    #: The file ends inside a frame or page, and the decoder dropped it.
+    #: The file ends inside a frame or page, and the decoder dropped it. Reported, not
+    #: counted: F2.02 scores it.
     partial_tail: bool = False
     #: Lost-sync notes explained by a trailing tag; reported, not counted.
     tag_notes: int = 0
@@ -54,8 +54,8 @@ class DecodeErrors:
 
     @property
     def count(self) -> int:
-        """F2.06 measured value: concealed units, unexplained resyncs, tail and abort."""
-        return self.concealed + self.resyncs + int(self.partial_tail) + int(self.fatal is not None)
+        """F2.06 measured value: concealed units, unexplained resyncs and an abort."""
+        return self.concealed + self.resyncs + int(self.fatal is not None)
 
 
 def mp3_decode_errors(

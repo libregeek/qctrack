@@ -156,7 +156,24 @@ class Mp3Scan:
 
     @property
     def truncated(self) -> bool:
+        """The file ends inside its last frame."""
         return self.truncated_bytes > 0
+
+    @property
+    def missing_frames(self) -> int | None:
+        """Frames the Xing/Info/VBRI header declares beyond those present (a partial last
+        frame counts as present). None when the file declares no frame count."""
+        if self.declared_frames is None:
+            return None
+        return max(0, self.declared_frames - self.frame_count)
+
+    @property
+    def missing_s(self) -> float | None:
+        """``missing_frames`` in seconds, or None when unknown."""
+        n = self.missing_frames
+        if n is None or not self.sample_rate or not self.samples_per_frame:
+            return None
+        return n * self.samples_per_frame / self.sample_rate
 
     @property
     def unidentified_fraction(self) -> float:

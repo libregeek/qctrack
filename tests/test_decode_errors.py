@@ -110,7 +110,8 @@ def test_clean_mp3_has_no_errors(tmp_path: Path, mp3_bytes: bytes) -> None:
 def test_truncated_mp3_reports_an_error(tmp_path: Path, mp3_bytes: bytes) -> None:
     r = mp3_errors(put(tmp_path, "t.mp3", mp3_bytes[: len(mp3_bytes) // 2 + 123]))
     print(f"truncated mp3: {r}")
-    assert r.partial_tail and r.count == 1
+    # The cut-off tail is recorded but scored only by F2.02, so it is not counted here (H8).
+    assert r.partial_tail and r.count == 0
 
 
 def test_known_tags_are_not_errors(tmp_path: Path, mp3_bytes: bytes) -> None:
@@ -186,12 +187,12 @@ def test_corrupted_ogg_counts_holes(tmp_path: Path, ogg_bytes: bytes) -> None:
     many = ogg_errors(put(tmp_path, "many.ogg", burst(ogg_bytes, 8)))
     print(f"corrupted ogg: {few.concealed} hole for 1 burst, {many.concealed} for 8")
     assert few.concealed == 1 and many.concealed >= 4
-    assert many.count == many.concealed + int(many.partial_tail)
+    assert many.count == many.concealed
 
 
 def test_truncated_ogg_reports_an_error(tmp_path: Path, ogg_bytes: bytes) -> None:
     r = ogg_errors(put(tmp_path, "t.ogg", ogg_bytes[: len(ogg_bytes) // 2 + 77]))
-    assert r.partial_tail and r.count >= 1
+    assert r.partial_tail and r.count == r.concealed
 
 
 # --- the stderr capture ------------------------------------------------------------------

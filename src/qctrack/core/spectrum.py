@@ -19,6 +19,12 @@ are starting values to tune with the labelled corpus, T10 and T11):
 * The *cutoff* is the first frequency, scanning up from the plateau, where the spectrum
   drops :data:`EDGE_DROP_DB` below the plateau (or 80% of the way to the floor when the
   whole drop is smaller). Without a cliff the cutoff is Nyquist: nothing limits the band.
+* The *fade* is how far the smoothed spectrum falls from the stretch at
+  :data:`FADE_REF` of the cutoff to the plateau. Below a transcode's wall the content runs at
+  close to its normal level (a fade of 2-6 dB on test signals). When a source's high
+  frequencies are already faint, LAME codes nothing in its top scalefactor band (sfb21, from
+  about 16 kHz at 44.1 kHz) even at 320 kbps, which also leaves a wall, but only after the
+  content has faded (23-30 dB on test signals). F3.02 uses it to tell the two apart.
 * *Upsampling* is reported when a cliff sits just under the Nyquist frequency of a common
   lower sample rate. A genuine band-limited file can look the same (matrix F3.06: "report
   together with the cutoff"), so this is evidence and not a verdict.
@@ -55,6 +61,8 @@ EDGE_DROP_DB = 45.0
 #: A cutoff this close to Nyquist counts as no cutoff.
 EDGE_HZ = 500.0
 SPAN_HZ = 1000.0
+#: Reference stretch for the fade, as fractions of the cutoff frequency.
+FADE_REF = (0.6, 0.75)
 #: Common source sample rates tested for F3.06.
 SOURCE_RATES = (11025, 12000, 16000, 22050, 24000, 32000)
 #: Cutoff window, relative to the source Nyquist, that matches a resampled file.
@@ -90,6 +98,8 @@ class SpectrumResult:
     sharpness_db_per_khz: float = 0.0
     #: F3.06: sample rate the content looks resampled from, or None.
     upsampled_from_hz: int | None = None
+    #: dB the spectrum falls from FADE_REF of the cutoff to the plateau; None without a cliff.
+    fade_db: float | None = None
     #: The averaged spectrum in dBFS, bin k at ``k * rate / FFT_SIZE`` Hz (None if unmeasured).
     mean_spectrum_db: Spectrum | None = field(default=None, repr=False)
 
@@ -97,6 +107,28 @@ class SpectrumResult:
 def _smooth(db: Spectrum, width: int) -> Spectrum:
     padded = np.pad(db, (width // 2, width // 2), mode="edge")
     return np.convolve(padded, np.full(width, 1.0 / width), mode="valid")
+
+
+def _fade(sm: Spectrum, res: float, cutoff_hz: float, plateau_db: float) -> float:
+    lo = int(FADE_REF[0] * cutoff_hz / res)
+    hi = max(lo + 1, int(FADE_REF[1] * cutoff_hz / res) + 1)
+    return round(float(sm[lo:hi].mean()) - plateau_db, 1)
+
+
+def fade_before_cutoff(r: SpectrumResult) -> float | None:
+    """The stored fade, or for results saved before it existed, the fade recomputed from the
+    stored spectrum. None when there is no cliff."""
+    if not r.has_cliff:
+        return None
+    if r.fade_db is not None:
+        return r.fade_db
+    if r.mean_spectrum_db is None:
+        return None
+    res = r.rate / FFT_SIZE
+    sm = _smooth(
+        np.asarray(r.mean_spectrum_db, dtype=np.float64), max(3, round(SMOOTH_HZ / res)) | 1
+    )
+    return _fade(sm, res, r.cutoff_hz, r.plateau_db)
 
 
 def analyse_spectrum(mean_db: Spectrum, rate: int) -> SpectrumResult:
@@ -130,6 +162,7 @@ def analyse_spectrum(mean_db: Spectrum, rate: int) -> SpectrumResult:
         return r
     r.has_cliff = True
     r.cutoff_hz = float(cut * res)
+    r.fade_db = _fade(sm, res, r.cutoff_hz, r.plateau_db)
     for source in SOURCE_RATES:
         if source < rate and UPSAMPLE_LOW * source / 2 <= r.cutoff_hz <= UPSAMPLE_HIGH * source / 2:
             r.upsampled_from_hz = source

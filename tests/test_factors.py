@@ -30,6 +30,7 @@ def mp3(**kw: object) -> Mp3Scan:
     base: dict[str, object] = {
         "size": 4_000_000, "frame_count": 1000, "sample_rate": 44100,
         "channel_mode": "Joint stereo", "average_bitrate_kbps": 320.0, "mode": Mp3Mode.CBR,
+        "samples_per_frame": 1152,
         "sample_rates_seen": {44100}, "encoder": "LAME3.100", "lame": lame(320),
     }  # fmt: skip
     return Mp3Scan(**{**base, **kw})  # type: ignore[arg-type]
@@ -75,11 +76,49 @@ def test_fake_320_with_low_cutoff_gets_g4() -> None:
     assert s.final_score is not None and s.final_score <= 59
 
 
+def declared(frames: int) -> dict[str, object]:
+    """Xing/Info header fields for a file declaring ``frames`` frames of 1152 at 44.1 kHz."""
+    return {"declared_frames": frames, "declared_duration_s": frames * 1152 / 44100}
+
+
 def test_truncated_mp3_gets_g2() -> None:
-    results = run(mp3(truncated_bytes=500))
+    # 1000 of 2000 declared frames present: 26 s of 52 s missing.
+    results = run(mp3(truncated_bytes=500, **declared(2000)))
     assert results["F2.02"].verdict is Verdict.FAIL
+    assert results["F2.02"].detail == "truncated, 26.1 s of 52.2 s missing"
     s = score_track(results.values(), P)
     assert (s.gates, s.rating, s.final_score) == (("G2",), "F", 39.0)
+
+
+def test_cut_short_last_frame_is_a_warn_without_gate() -> None:
+    # The file ends inside its last frame, which the declared count includes (C6).
+    for kw in ({}, declared(1000)):
+        results = run(mp3(truncated_bytes=500, **kw))
+        assert results["F2.02"].verdict is Verdict.WARN, kw
+        s = score_track(results.values(), P)
+        assert s.gates == () and s.rating == "A", (kw, s)
+
+
+def test_small_declared_shortfall_is_a_warn() -> None:
+    # 20 frames (0.5 s) missing is below max(1 s, 1%): Warn, no gate.
+    assert run(mp3(**declared(1020)))["F2.02"].verdict is Verdict.WARN
+    # 40 frames (1.04 s) of 26.6 s declared is above both limits: Fail.
+    assert run(mp3(**declared(1040)))["F2.02"].verdict is Verdict.FAIL
+    # The 1% limit applies to long tracks: 0.04% of a long declared length is a Warn.
+    long = {"frame_count": 100_000, **declared(100_040)}
+    assert run(mp3(**long))["F2.02"].verdict is Verdict.WARN
+
+
+def test_32khz_leaves_out_cutoff_factors() -> None:
+    """C5: at 32 kHz the cutoff is bounded by Nyquist, so F3.01 and F3.02 are left out and
+    gate G4 cannot fire; F1.03 scores the sample rate."""
+    results = run(
+        mp3(sample_rate=32000, sample_rates_seen={32000}, average_bitrate_kbps=160.0),
+        spectrum=[spectrum(cutoff=15400.0, rate=32000)],
+    )
+    assert "F3.01" not in results and "F3.02" not in results
+    assert results["F1.03"].verdict is Verdict.WARN
+    assert "G4" not in score_track(results.values(), P).gates
 
 
 def test_sync_losses_and_unidentified_data() -> None:
@@ -207,13 +246,13 @@ def test_scores_depend_on_the_profile(tmp_path: Path) -> None:
 # --- Ogg Vorbis ---------------------------------------------------------------------------
 
 
-def vorbis(**kw: object) -> OggScan:
+def vorbis(has_eos: bool = True, **kw: object) -> OggScan:
     hdr = VorbisHeader(
         version=0, channels=2, rate=44100, bitrate_max=0, bitrate_nominal=192000, bitrate_min=0
     )
     stream = OggStream(
         serial=1, link=0, codec=Format.VORBIS, first_page=0, pages=100, page_bytes=1_000_000,
-        first_granule=0, last_granule=44100 * 40, has_eos=True, vorbis=hdr,
+        first_granule=0, last_granule=44100 * 40, has_eos=has_eos, vorbis=hdr,
     )  # fmt: skip
     return OggScan(size=1_000_500, streams=[stream], **kw)  # type: ignore[arg-type]
 
@@ -239,7 +278,17 @@ def test_vorbis_bitrate_and_integrity() -> None:
     assert run_ogg(vorbis(crc_failures=2))["F2.05"].verdict is Verdict.FAIL
     assert run_ogg(vorbis(lost_pages=1))["F2.01"].verdict is Verdict.WARN
     assert run_ogg(vorbis(granule_backwards=1))["F2.14"].verdict is Verdict.FAIL
-    assert run_ogg(vorbis(truncated_bytes=10))["F2.02"].verdict is Verdict.FAIL
+    # A cut-off final page: the stream never reached its end-of-stream page.
+    assert run_ogg(vorbis(truncated_bytes=10, has_eos=False))["F2.02"].verdict is Verdict.FAIL
+
+
+def test_vorbis_end_of_stream_flag() -> None:
+    # A complete final page without the end-of-stream flag is not truncation (C6).
+    open_ended = run_ogg(vorbis(has_eos=False))["F2.02"]
+    assert open_ended.verdict is Verdict.PASS
+    assert open_ended.detail == "complete, end-of-stream flag not set"
+    # A cut-off page after a stream that did end is a Warn without gate.
+    assert run_ogg(vorbis(truncated_bytes=10, has_eos=True))["F2.02"].verdict is Verdict.WARN
 
 
 def test_unsupported_format_is_rejected() -> None:

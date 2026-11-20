@@ -122,12 +122,12 @@ def test_junk_is_unidentified(tmp_path: Path) -> None:
 def test_truncated_file(tmp_path: Path) -> None:
     s = stream(7, (1000, 2000))
     r = scan_ogg(write(tmp_path, s[:-20]))
-    assert r.truncated and r.truncated_bytes == 20
+    assert r.truncated and r.truncated_bytes == 20 and not r.last_ended
 
 
-def test_missing_eos_means_truncated(tmp_path: Path) -> None:
+def test_missing_eos_is_reported_but_not_truncation(tmp_path: Path) -> None:
     r = scan_ogg(write(tmp_path, stream(7, (1000, 2000), eos=False)))
-    assert r.truncated and r.missing_eos == 1 and r.truncated_bytes == 0
+    assert not r.truncated and r.missing_eos == 1 and not r.last_ended
 
 
 def test_granule_going_backwards(tmp_path: Path) -> None:

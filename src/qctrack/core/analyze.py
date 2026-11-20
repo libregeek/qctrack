@@ -37,7 +37,7 @@ Block = npt.NDArray[np.float32]
 
 #: Raise this whenever a change to pass 1 or 2 (or to the measurement types) would give a
 #: different result for the same file, so cached measurements are not reused (REQ-NFR-15).
-ANALYSER_VERSION = 2  # 2: Measured gained ``size``
+ANALYSER_VERSION = 3  # 2: Measured gained ``size``; 3: SpectrumResult gained ``fade_db``
 
 
 @dataclass

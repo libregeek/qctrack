@@ -117,7 +117,16 @@ class OggScan:
 
     @property
     def truncated(self) -> bool:
-        return self.truncated_bytes > 0 or (bool(self.streams) and self.missing_eos > 0)
+        """The file ends inside a page. A missing end-of-stream flag alone is not
+        truncation: some encoders and stream recorders never set it (see ``last_ended``)."""
+        return self.truncated_bytes > 0
+
+    @property
+    def last_ended(self) -> bool:
+        """True when the last Vorbis stream (or the last stream, if none is Vorbis) carries
+        its end-of-stream flag."""
+        streams = self.vorbis_streams or self.streams
+        return bool(streams) and streams[-1].has_eos
 
     @property
     def unidentified_fraction(self) -> float:

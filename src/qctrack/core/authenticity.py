@@ -11,7 +11,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-from qctrack.core.spectrum import SpectrumResult
+from qctrack.core.spectrum import SpectrumResult, fade_before_cutoff
 
 
 class Band(enum.IntEnum):
@@ -33,9 +33,14 @@ class Verdict(enum.Enum):
 CUTOFF_BAND_EDGES_HZ = ((19500.0, Band.HIGH), (17250.0, Band.MEDIUM), (16500.0, Band.LOW))
 #: Lower edge of each claimed band, average kbps (matrix, "MP3 bitrate bands").
 BITRATE_BAND_EDGES_KBPS = ((256.0, Band.HIGH), (160.0, Band.MEDIUM), (128.0, Band.LOW))
-#: The bands above assume CD-class rates. Below this sample rate Nyquist is too low to
-#: reach the High band, so F3.02 is not evaluated.
-MIN_RATE_HZ = 32000
+#: The bands above assume CD-class rates. Below this sample rate the cutoff is bounded by
+#: Nyquist, not by the quality of the source, so F3.01 and F3.02 are not evaluated (C5).
+MIN_RATE_HZ = 44100
+#: A fall of at least this much just below the wall means the content had already faded:
+#: the wall is likely LAME dropping faint high frequencies (sfb21), not a lower-quality
+#: source, so F3.02 is at most a Warn and gate G4 does not apply (N1). Starting value from
+#: test signals; tune with T10/T11.
+FADE_PROTECT_DB = 12.0
 
 #: F3.03 thresholds: how far the measured cutoff may sit below the declared lowpass.
 BANDWIDTH_WARN_HZ = 1000.0
@@ -69,6 +74,10 @@ class ClaimedVsEffective:
     #: How many bands the content falls short of the claim (0 when it meets or beats it).
     bands_lower: int
     verdict: Verdict
+    #: The fall just below the wall (dB), when there is a wall.
+    fade_db: float | None = None
+    #: True when a Fail was lowered to Warn because the content fades before the wall.
+    protected: bool = False
 
     @property
     def triggers_g4(self) -> bool:
@@ -79,14 +88,21 @@ class ClaimedVsEffective:
 def claimed_vs_effective(
     spectrum: SpectrumResult, average_kbps: float, lame_preset: str | None = None
 ) -> ClaimedVsEffective | None:
-    """F3.02 for MP3. None when the spectrum was not measured or the rate is too low."""
+    """F3.02 for MP3. None when the spectrum was not measured or the rate is too low.
+
+    Only a real cliff limits the effective band; without one the content is full band. A
+    Fail becomes a Warn when the content fades before the wall (``FADE_PROTECT_DB``)."""
     if not spectrum.measured or spectrum.rate < MIN_RATE_HZ:
         return None
     claimed = claimed_band(average_kbps, lame_preset)
-    effective = effective_band(spectrum.cutoff_hz)
+    effective = effective_band(spectrum.cutoff_hz) if spectrum.has_cliff else Band.HIGH
     lower = max(0, int(claimed) - int(effective))
     verdict = Verdict.PASS if lower == 0 else Verdict.WARN if lower == 1 else Verdict.FAIL
-    return ClaimedVsEffective(claimed, effective, lower, verdict)
+    fade = fade_before_cutoff(spectrum)
+    protected = verdict is Verdict.FAIL and fade is not None and fade >= FADE_PROTECT_DB
+    if protected:
+        verdict = Verdict.WARN
+    return ClaimedVsEffective(claimed, effective, lower, verdict, fade, protected)
 
 
 @dataclass(frozen=True)

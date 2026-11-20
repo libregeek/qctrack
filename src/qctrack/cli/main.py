@@ -188,6 +188,8 @@ def _mp3_lines(r: Mp3Scan) -> list[str]:
         f"({r.unidentified_fraction * 100:.3f}%), truncated: "
         f"{'yes, ' + str(r.truncated_bytes) + ' bytes missing' if r.truncated else 'no'}"
     )
+    if r.missing_frames:
+        lines.append(f"declared but missing: {r.missing_frames} frames ({r.missing_s or 0:.2f} s)")
     if r.metadata_bytes:
         meta = ", ".join(f"{k} {v}" for k, v in sorted(r.metadata_bytes.items()))
         lines.append(f"metadata bytes: {meta}")
@@ -223,7 +225,8 @@ def _ogg_lines(r: OggScan) -> list[str]:
     )
     lines.append(
         f"unidentified: {r.unidentified_bytes} bytes ({r.unidentified_fraction * 100:.3f}%), "
-        f"truncated: {'yes' if r.truncated else 'no'}"
+        f"truncated: {'yes, ' + str(r.truncated_bytes) + ' bytes missing' if r.truncated else 'no'}"
+        f", end-of-stream flag: {'set' if r.last_ended else 'missing'}"
     )
     return lines
 

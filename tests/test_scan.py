@@ -45,6 +45,47 @@ def test_genuine_320_scores_a_and_a_fake_320_is_capped_by_g4(library: Path) -> N
     assert fake.final_score is not None and fake.final_score <= 59
 
 
+def _ogg_crc(page: bytes) -> int:
+    crc = 0
+    for byte in page:
+        crc ^= byte << 24
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x04C11DB7) if crc & 0x80000000 else crc << 1
+            crc &= 0xFFFFFFFF
+    return crc
+
+
+def _clear_eos(ogg: bytes) -> bytes:
+    """The same file with the end-of-stream flag cleared on its last page (CRC fixed)."""
+    out = bytearray(ogg)
+    i = out.rfind(b"OggS")
+    out[i + 5] &= 0xFF & ~0x04
+    out[i + 22 : i + 26] = bytes(4)
+    out[i + 22 : i + 26] = _ogg_crc(bytes(out[i:])).to_bytes(4, "little")
+    return bytes(out)
+
+
+def test_truncation_gates_only_material_loss(library: Path, tmp_path: Path) -> None:
+    """C6: a cut-short last frame or a missing end-of-stream flag is harmless; half a file
+    missing is not."""
+    mp3 = (library / "a.mp3").read_bytes()
+    ogg = (library / "v.ogg").read_bytes()
+    cases = {
+        "short_frame.mp3": (mp3[:-200], "Warn", ()),
+        "half.mp3": (mp3[: len(mp3) // 2], "Fail", ("G2",)),
+        "no_eos.ogg": (_clear_eos(ogg), "Pass", ()),
+        "half.ogg": (ogg[: len(ogg) // 2], "Fail", ("G2",)),
+    }
+    for name, (data, verdict, gates) in cases.items():
+        (tmp_path / name).write_bytes(data)
+        r = analyze_file(tmp_path / name, P)
+        f202 = next(f for f in r.factors if f.factor == "F2.02")
+        assert f202.verdict is not None and f202.verdict.value == verdict, (name, f202)
+        assert r.score.gates == gates, (name, r.score)
+        if not gates:
+            assert r.score.rating in ("A", "B"), (name, r.score)
+
+
 def test_unsupported_unreadable_and_missing(library: Path, tmp_path: Path) -> None:
     assert analyze_file(library / "o.opus", P).score.status is Status.UNSUPPORTED
     assert analyze_file(library / "notes.mp3", P).score.status is Status.UNSUPPORTED

@@ -22,7 +22,12 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from qctrack.core.authenticity import Verdict, claimed_vs_effective, declared_vs_measured
+from qctrack.core.authenticity import (
+    MIN_RATE_HZ,
+    Verdict,
+    claimed_vs_effective,
+    declared_vs_measured,
+)
 from qctrack.core.decode_errors import DecodeErrors
 from qctrack.core.detect import Format
 from qctrack.core.loudness import LoudnessResult
@@ -45,6 +50,10 @@ _SUPPORTED_SAMPLE_RATES = (44100, 48000)
 _LOW_SAMPLE_RATE = 24000
 #: First LAME release that counts as a current reference encoder (F1.05).
 _CURRENT_LAME = (3, 98)
+#: F2.02: a declared-length shortfall is material truncation (Fail, gate G2) only when it
+#: exceeds both of these. Anything smaller, such as a cut-short last frame, is a Warn.
+_TRUNCATION_MIN_S = 1.0
+_TRUNCATION_MIN_FRACTION = 0.01
 
 
 @dataclass
@@ -142,7 +151,7 @@ def _mp3_pass1(s: Mp3Scan, profile: Profile) -> list[FactorResult]:
     out.append(
         _numeric("F2.01", s.sync_losses, profile.curves["F2.01"], f"{s.sync_losses} sync losses")
     )
-    out.append(_truncation(s.truncated, f"{s.truncated_bytes} bytes missing"))
+    out.append(_mp3_truncation(s))
     pct = s.unidentified_fraction * 100
     out.append(_numeric("F2.03", pct, profile.curves["F2.03"], f"{pct:.3f}% unidentified"))
     return out
@@ -165,7 +174,7 @@ def _vorbis_pass1(o: OggScan, profile: Profile) -> list[FactorResult]:
     out.append(
         _numeric("F2.01", structure, profile.curves["F2.01"], f"{structure} structure errors")
     )
-    out.append(_truncation(o.truncated, f"{o.truncated_bytes} bytes missing"))
+    out.append(_ogg_truncation(o))
     pct = o.unidentified_fraction * 100
     out.append(_numeric("F2.03", pct, profile.curves["F2.03"], f"{pct:.3f}% unidentified"))
     out.append(
@@ -194,9 +203,43 @@ def _sample_rate(rate: int, inconsistent: bool) -> FactorResult:
     )
 
 
-def _truncation(truncated: bool, detail: str) -> FactorResult:
-    if truncated:
-        return _categorical("F2.02", Verdict.FAIL, f"truncated, {detail}")
+def _mp3_truncation(s: Mp3Scan) -> FactorResult:
+    """F2.02 for MP3. Only a declared frame count shows how much audio is missing, so only
+    it can justify a Fail; a last frame cut short loses at most one frame (26 ms at 44.1 kHz)
+    and is common in good files."""
+    missing, declared = s.missing_s, s.declared_duration_s
+    if missing is not None and declared:
+        if missing > max(_TRUNCATION_MIN_S, _TRUNCATION_MIN_FRACTION * declared):
+            return _categorical(
+                "F2.02", Verdict.FAIL, f"truncated, {missing:.1f} s of {declared:.1f} s missing"
+            )
+    if s.truncated_bytes > 0:
+        return _categorical(
+            "F2.02", Verdict.WARN, f"last frame cut short, {s.truncated_bytes} bytes missing"
+        )
+    if missing:
+        return _categorical(
+            "F2.02", Verdict.WARN, f"{s.missing_frames} declared frames missing ({missing:.2f} s)"
+        )
+    return _categorical("F2.02", Verdict.PASS, "complete")
+
+
+def _ogg_truncation(o: OggScan) -> FactorResult:
+    """F2.02 for Ogg. Ogg declares no total length, so a final page cut off in a stream that
+    never ends is the only sign of an interrupted file. A missing end-of-stream flag on a
+    complete final page is common and harmless."""
+    if o.truncated_bytes > 0 and not o.last_ended:
+        return _categorical(
+            "F2.02",
+            Verdict.FAIL,
+            f"truncated, final page cut off ({o.truncated_bytes} bytes missing)",
+        )
+    if o.truncated_bytes > 0:
+        return _categorical(
+            "F2.02", Verdict.WARN, f"cut-off page after the end, {o.truncated_bytes} bytes"
+        )
+    if not o.last_ended:
+        return _categorical("F2.02", Verdict.PASS, "complete, end-of-stream flag not set")
     return _categorical("F2.02", Verdict.PASS, "complete")
 
 
@@ -300,7 +343,9 @@ def _spectral_factors(
     is_mp3 = m.format is Format.MP3
     measured = [r for r in m.spectrum if r.measured]
     out: list[FactorResult] = []
-    derived = ["F3.01", "F3.02", "F3.06"] + (["F3.03"] if lowpass_hz > 0 else [])
+    derived = ["F3.06"] + (["F3.03"] if lowpass_hz > 0 else [])
+    if m.mp3 is not None and m.mp3.sample_rate >= MIN_RATE_HZ:
+        derived = ["F3.01", "F3.02"] + derived
     if is_mp3 is False:
         derived = ["F3.06"]  # no Vorbis cutoff table yet (matrix: build from reference encodes)
     if not measured:
@@ -308,16 +353,23 @@ def _spectral_factors(
         return [_not_evaluated(f, why) for f in derived]
 
     if is_mp3:
-        out.append(_cutoff(measured, profile))
+        # F3.01 and F3.02 use CD-rate tables: below 44.1 kHz they are left out (C5), and
+        # F1.03 scores the sample rate instead.
+        cd_rate = [r for r in measured if r.rate >= MIN_RATE_HZ]
+        if cd_rate:
+            out.append(_cutoff(cd_rate, profile))
         claims = [claimed_vs_effective(r, avg_kbps, preset) for r in measured]
         valid = [c for c in claims if c is not None]
         if valid:
-            worst = max(valid, key=lambda c: _ORDER[c.verdict])
+            worst = max(valid, key=lambda c: (_ORDER[c.verdict], c.bands_lower))
             said, found = worst.claimed.name.lower(), worst.effective.name.lower()
-            out.append(
-                _categorical("F3.02", worst.verdict, f"claims {said}, content supports {found}")
-            )
-        # No F3.02 when the sample rate is too low for the band table: left out, not penalised.
+            detail = f"claims {said}, content supports {found}"
+            if worst.protected:
+                detail += (
+                    f"; content fades {worst.fade_db:.0f} dB before the wall, as when the "
+                    "encoder drops faint highs, so not treated as a transcode"
+                )
+            out.append(_categorical("F3.02", worst.verdict, detail))
         if lowpass_hz > 0:
             decls = [d for r in measured if (d := declared_vs_measured(r, lowpass_hz))]
             if decls:

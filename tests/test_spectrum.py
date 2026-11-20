@@ -7,6 +7,7 @@ import numpy.typing as npt
 import pytest
 
 from qctrack.core.authenticity import (
+    FADE_PROTECT_DB,
     Band,
     Verdict,
     claimed_band,
@@ -139,8 +140,12 @@ def test_empty_input() -> None:
 # --- derived factors --------------------------------------------------------------------
 
 
-def fake(cutoff: float, rate: int = RATE) -> SpectrumResult:
-    return SpectrumResult(rate=rate, measured=True, nyquist_hz=rate / 2, cutoff_hz=cutoff)
+def fake(cutoff: float, rate: int = RATE, fade: float | None = 3.0) -> SpectrumResult:
+    cliff = cutoff < rate / 2 - 500
+    return SpectrumResult(
+        rate=rate, measured=True, nyquist_hz=rate / 2, cutoff_hz=cutoff, has_cliff=cliff,
+        fade_db=fade if cliff else None,
+    )  # fmt: skip
 
 
 @pytest.mark.parametrize(
@@ -176,7 +181,29 @@ def test_claimed_vs_effective_verdicts() -> None:
 
 def test_claimed_vs_effective_not_evaluated() -> None:
     assert claimed_vs_effective(fake(10000, rate=22050), 128) is None  # low sample rate
+    # 32 kHz: Nyquist (16 kHz) bounds the cutoff, so the CD-rate table does not apply (C5).
+    assert claimed_vs_effective(fake(15400, rate=32000), 160) is None
     assert claimed_vs_effective(SpectrumResult(rate=RATE), 320) is None  # unmeasured
+
+
+def test_no_cliff_means_full_band() -> None:
+    # Without a cliff, the cutoff value is not evidence of a limited band.
+    r = SpectrumResult(rate=48000, measured=True, nyquist_hz=24000, cutoff_hz=15000)
+    v = claimed_vs_effective(r, 320)
+    assert v and v.effective is Band.HIGH and v.verdict is Verdict.PASS
+
+
+def test_fading_content_before_the_wall_is_not_a_transcode() -> None:
+    """N1: LAME drops faint highs (sfb21) even at 320 kbps, leaving a wall near 16 kHz that
+    is reached only after the content has faded. That is at most a Warn, never gate G4."""
+    faded = claimed_vs_effective(fake(16200, fade=FADE_PROTECT_DB), 320)
+    assert faded and faded.verdict is Verdict.WARN and faded.protected
+    assert faded.bands_lower == 3 and not faded.triggers_g4
+    full = claimed_vs_effective(fake(16200, fade=FADE_PROTECT_DB - 0.1), 320)
+    assert full and full.verdict is Verdict.FAIL and not full.protected
+    # A one-band Warn is not changed, and a Pass stays a Pass.
+    one = claimed_vs_effective(fake(18000, fade=30.0), 320)
+    assert one and one.verdict is Verdict.WARN and not one.protected
 
 
 def test_declared_vs_measured() -> None:
@@ -245,6 +272,8 @@ def test_128_reencoded_to_320_is_flagged(tmp_path: Path) -> None:
     assert out["genuine320"][2].verdict is Verdict.PASS
     fake_verdict = out["transcode320"][2]
     assert fake_verdict.verdict is Verdict.FAIL and fake_verdict.triggers_g4
+    # Content runs at full level up to the transcode's wall, unlike a source that fades.
+    assert fake_verdict.fade_db is not None and fake_verdict.fade_db < FADE_PROTECT_DB
     assert out["transcode320"][0].cutoff_hz < 17500 < out["genuine320"][0].cutoff_hz
     # F3.03: LAME declares ~20.5 kHz in the transcode, but the content stops far lower.
     lowpass = out["transcode320"][1].lame.lowpass_hz if out["transcode320"][1].lame else 0
@@ -257,6 +286,40 @@ def test_128_reencoded_to_320_is_flagged(tmp_path: Path) -> None:
     )
     if genuine_declared is not None:
         assert genuine_declared.verdict is Verdict.PASS
+
+
+def encode_dark_source(out: Path, corner: int) -> None:
+    """A genuine 320 kbps encode of a dark source: pink noise with slow level changes,
+    falling a further 24 dB per octave above ``corner`` Hz (two 2-pole lowpass filters), so
+    its high frequencies fade gradually with no wall of their own."""
+    noise = "anoisesrc=d=15:c=pink:r=44100:a=0.3:seed={}"
+    graph = (
+        "[0][1]amerge=inputs=2,volume='0.35+0.3*sin(2*PI*t/7)':eval=frame,"
+        f"lowpass=f={corner}:poles=2,lowpass=f={corner}:poles=2"
+    )
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", noise.format(1), "-f", "lavfi",
+         "-i", noise.format(2), "-filter_complex", graph, "-c:a", "libmp3lame", "-b:a", "320k",
+         str(out)],
+        check=True,
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize("corner", [5000, 9000])
+def test_dark_source_at_320_is_not_a_transcode(tmp_path: Path, corner: int) -> None:
+    """N1 through the real encoder: LAME drops the faint highs of a dark source even at
+    320 kbps, leaving a wall near 16 kHz, but the fade before it keeps gate G4 off."""
+    path = tmp_path / f"dark{corner}.mp3"
+    encode_dark_source(path, corner)
+    spec = analyse(path)
+    v = claimed_vs_effective(spec, scan_mp3(path).average_bitrate_kbps)
+    print(f"dark source from {corner} Hz at 320 kbps: cutoff {spec.cutoff_hz:.0f} Hz, fade "
+          f"{spec.fade_db} dB -> {v and v.verdict.value}")  # fmt: skip
+    assert v is not None
+    # The encoder's wall lands two or more bands below the 320 kbps claim ...
+    assert spec.has_cliff and spec.cutoff_hz < 16500 and v.bands_lower >= 2
+    # ... but the content fades before it, so this is a Warn and never gate G4.
+    assert v.protected and v.verdict is Verdict.WARN and not v.triggers_g4
 
 
 def test_vorbis_cutoff_is_measured(tmp_path: Path) -> None:
