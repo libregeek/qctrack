@@ -92,6 +92,33 @@ def test_multiplexed_ogg_is_unsupported() -> None:
     assert not det.supported
 
 
+def test_skeleton_beside_vorbis_is_supported() -> None:
+    """N5: an Ogg Skeleton index stream (Xiph's advice for .oga) does not hide the Vorbis."""
+    skel = ogg_bos_page(b"fishead\x00" + bytes(56), 1)
+    det = detect(io.BytesIO(skel + ogg_bos_page(b"\x01vorbis" + bytes(23), 2)))
+    assert det.format is Format.VORBIS and det.supported
+    assert det.ogg_streams == (Format.SKELETON, Format.VORBIS)
+    alone = detect(io.BytesIO(skel))
+    assert alone.format is Format.SKELETON and not alone.supported
+
+
+@pytest.mark.parametrize(
+    ("head", "expected"),
+    [
+        (b"RIFF\x00\x00\x00\x00WAVEfmt ", Format.WAV),
+        (b"FORM\x00\x00\x00\x00AIFF", Format.AIFF),
+        (b"\x00\x00\x00\x20ftypM4A ", Format.MP4),
+        (bytes.fromhex("3026b2758e66cf11a6d900aa0062ce6c"), Format.ASF),
+        (b"MAC \x96\x0f", Format.APE),
+        (b"wvpk\x00\x00", Format.WAVPACK),
+    ],
+)
+def test_containers_are_named_before_any_frame_search(head: bytes, expected: Format) -> None:
+    """C8: valid-looking MPEG frames inside another container never make it an MP3."""
+    det = detect(io.BytesIO(head + bytes(16) + mp3_frames(8)))
+    assert det.format is expected and not det.supported
+
+
 def test_native_flac_with_id3v2() -> None:
     assert d(id3v2(1000) + b"fLaC" + bytes(40)) is Format.FLAC
 

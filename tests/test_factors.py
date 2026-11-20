@@ -145,20 +145,39 @@ def test_lame_v0_to_v2_is_high_whatever_the_average() -> None:
     assert v7.verdict is Verdict.WARN
 
 
-def test_encoder_and_preset() -> None:
-    old = run(mp3(encoder="LAME3.97", lame=lame(490, encoder="LAME3.97")))
-    assert old["F1.05"].verdict is Verdict.WARN
-    assert run(mp3(encoder="Xing", lame=None))["F1.05"].verdict is Verdict.WARN
-    assert run(mp3(encoder="LAME3.98.4", lame=lame(490)))["F1.05"].verdict is Verdict.PASS
+def f105(encoder: str | None) -> FactorResult | None:
+    return run(mp3(encoder=encoder, lame=None)).get("F1.05")
+
+
+def test_encoder_identity() -> None:
+    """H4: identified encoders are judged; unidentified ones are left out, not penalised."""
+    for name in ("LAME3.100", "LAME3.98.4", "LAME3.97", "LAME3.90", "L3.99r", "Lavc63.1."):
+        r = f105(name)
+        assert r is not None and r.verdict is Verdict.PASS, name
+    lavc = f105("Lavc58.91")
+    assert lavc is not None and lavc.detail == "Lavc58.91 (FFmpeg libmp3lame)"
+    for name in ("LAME3.89", "LAME3.70", "Xing", "BladeEnc", "Shine", "GOGO3.13"):
+        r = f105(name)
+        assert r is not None and r.verdict is Verdict.WARN, name
+    assert f105(None) is None and f105("") is None and f105("iTunes") is None
+    # Leaving F1.05 out does not lower coverage.
+    assert score_track(run(mp3(encoder=None, lame=None)).values(), P).coverage_pct == 100.0
+
+
+def test_encoder_preset() -> None:
     assert run(mp3(lame=lame(450)))["F1.06"].verdict is Verdict.WARN  # V5
     assert run(mp3(lame=lame(490)))["F1.06"].verdict is Verdict.PASS  # V1
     assert run(mp3(lame=lame(1003)))["F1.06"].verdict is Verdict.PASS  # insane
     assert run(mp3(lame=lame(192)))["F1.06"].verdict is Verdict.WARN  # ABR/CBR 192
+    for kbps in (224, 256, 320):  # H4: CBR and ABR from 224 kbps up are high quality
+        assert run(mp3(lame=lame(kbps)))["F1.06"].verdict is Verdict.PASS, kbps
+    vbr = run(mp3(lame=lame(256), mode=Mp3Mode.VBR))["F1.06"]
+    assert vbr.verdict is Verdict.WARN  # a kbps preset on a VBR stream is not a CBR claim
 
 
 def test_factors_with_nothing_stored_are_left_out_not_penalised() -> None:
     results = run(mp3(lame=None, encoder=None))
-    assert "F1.06" not in results and "F1.08" not in results and "F3.03" not in results
+    assert not {"F1.05", "F1.06", "F1.08", "F3.03"} & set(results)
     s = score_track(results.values(), P)
     assert s.coverage_pct == 100.0
 
@@ -213,10 +232,26 @@ def test_declared_lowpass_far_above_measured_cutoff() -> None:
     assert 0 < (r.score or 0) < 50
 
 
-def test_upsampled_content_fails_f3_06() -> None:
-    up = spectrum()
-    up.upsampled_from_hz = 22050
-    assert run(mp3(), spectrum=[up])["F3.06"].verdict is Verdict.FAIL
+def test_upsampling_evidence_is_reported_but_not_scored() -> None:
+    """H5: a cliff near 16 kHz may be a 32 kHz source or the encoder's own lowpass."""
+    up = spectrum(cutoff=15500.0)
+    up.upsampled_from_hz = 32000
+    results = run(mp3(average_bitrate_kbps=112.0, lame=lame(112)), spectrum=[up])
+    assert results["F3.06"].verdict is Verdict.WARN
+    assert "32000 Hz source or this encoder's lowpass" in results["F3.06"].detail
+    assert P.factors["F3.06"] == 0
+    clean = run(mp3(average_bitrate_kbps=112.0, lame=lame(112)), spectrum=[spectrum(15500.0)])
+    s, c = score_track(results.values(), P), score_track(clean.values(), P)
+    assert s.final_score == c.final_score
+
+
+def test_vorbis_o3_drops_out_without_a_scored_factor() -> None:
+    """N2: Vorbis has no cutoff table yet, so O3 has no weighted factor and is renormalised
+    away instead of resting on F3.06 alone."""
+    up = spectrum(cutoff=15500.0)
+    up.upsampled_from_hz = 32000
+    s = score_track(run_ogg(vorbis(), spectrum=[up]).values(), P)
+    assert s.objectives["O3"] is None and s.rating == "A"
 
 
 def test_quick_scan_leaves_pass_2_factors_not_evaluated_and_is_provisional() -> None:

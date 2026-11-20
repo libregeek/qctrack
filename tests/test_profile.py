@@ -14,7 +14,7 @@ def write(tmp_path: Path, text: str) -> Path:
 
 def test_default_loads_with_spec_values() -> None:
     p = load_default()
-    assert p.label == "default@1.0"
+    assert p.label == "default@1.1"
     assert p.objectives == {"O1": 25, "O2": 30, "O3": 45}
     assert p.factors["F3.02"] == 30 and p.factors["F2.09"] == 0
     assert p.gates["G4_cap"] == 59 and p.gates["G5_min_coverage"] == 70
@@ -26,7 +26,9 @@ def test_default_factor_weights_match_requirements_table() -> None:
     f = load_default().factors
     assert sum(v for k, v in f.items() if k.startswith("F1.")) == 100
     assert sum(v for k, v in f.items() if k.startswith("F2.")) == 108
-    assert sum(v for k, v in f.items() if k.startswith("F3.")) == 110
+    # 110 in the requirements table, less F3.06 (10), which profile 1.1 reports only (H5).
+    assert sum(v for k, v in f.items() if k.startswith("F3.")) == 100
+    assert f["F3.06"] == 0
 
 
 def test_partial_profile_falls_back_to_default(tmp_path: Path) -> None:

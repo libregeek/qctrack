@@ -58,7 +58,7 @@ def test_report_json_holds_measurements_scores_and_profile(first_run: Path) -> N
     doc = strict_load(first_run / "report.json")
     assert doc["format"] == "qctrack-report" and doc["schema"] == 1
     profile = load_default()
-    assert doc["profile"]["label"] == "default@1.0"
+    assert doc["profile"]["label"] == "default@1.1"
     assert doc["profile"]["sha256"] == profile.content_hash
     assert doc["profile"]["values"]["factors"]["F1.01"] == profile.factors["F1.01"]
     tracks = {Path(t["path"]).name: t for t in doc["tracks"]}

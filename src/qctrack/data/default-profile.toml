@@ -3,7 +3,7 @@
 # `--profile my-profile.toml` or save it as ~/.config/qctrack/profile.toml.
 # A profile may override only some values; anything omitted falls back to this file.
 name = "default"
-version = "1.0"
+version = "1.1"
 
 # Weight of each objective in the final score.
 [objectives]
@@ -47,7 +47,8 @@ O3 = 45  # Authenticity & transcode
 "F3.03" = 10  # Declared vs measured bandwidth
 "F3.04" = 10  # Cutoff sharpness
 "F3.05" = 10  # High-band holes & flicker
-"F3.06" = 10  # Upsampling detection
+"F3.06" = 0   # Upsampling detection: reported only, because in MP3 and Vorbis an
+              # encoder lowpass near 16 kHz looks the same as a 32 kHz source (H5)
 "F3.07" = 0   # Experimental
 "F3.08" = 0   # View only
 "F3.10" = 15  # Fake bit depth

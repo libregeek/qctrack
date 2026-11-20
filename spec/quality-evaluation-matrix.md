@@ -84,7 +84,7 @@ Headline quality indicator users expect.
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |
 | MP3 | Applies | Bitrate index per frame; average from audio bytes ÷ duration. Scored from the band table below. | — |
-| Ogg Vorbis | Applies | Nominal / min / max from the identification header; average from stream bytes ÷ duration. | Pass: ≥ 160 kbps (≈ q5+); Warn: 112–159 kbps; Poor: < 112 kbps |
+| Ogg Vorbis | Applies | Nominal / min / max from the identification header; average from audio page bytes ÷ duration, leaving out the header pages, which can hold cover art (finding C7). | Pass: ≥ 160 kbps (≈ q5+); Warn: 112–159 kbps; Poor: < 112 kbps |
 | FLAC | Adapted | Average reflects compression ratio, not quality. Report only. | Info: Informational for lossless |
 | Opus | Applies | Average from packet sizes over duration. | Pass: ≥ 128 kbps stereo; Warn: 64–127 kbps; Poor: < 64 kbps music |
 
@@ -163,7 +163,7 @@ Encoder quality varies between implementations and versions.
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |
-| MP3 | Applies | LAME tag version string; fingerprint frame patterns if absent. | Pass: LAME ≥ 3.98; Warn: Old LAME, Xing, Blade, unknown |
+| MP3 | Applies | LAME tag version string; fingerprint frame patterns if absent. | Pass: LAME ≥ 3.90, including FFmpeg's libmp3lame (`Lavc`/`Lavf`); Warn: LAME before 3.90, Xing, BladeEnc, Shine, GOGO; unidentified or missing: not scored (finding H4) |
 | Ogg Vorbis | Applies | Vendor string in the comment header (libVorbis release date, aoTuV, other tunings). | — |
 | FLAC | Applies | Vendor string in VORBIS_COMMENT block (libFLAC version). | — |
 | Opus | Applies | Vendor string in OpusTags (libopus version). | — |
@@ -183,7 +183,7 @@ Reveals the intended quality level (V0, -q 6, etc.).
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |
-| MP3 | Applies | LAME tag: VBR quality, preset code, encoding flags. | Pass: V0–V2, 320 CBR, insane/extreme; Warn: V4 or lower, fast mode |
+| MP3 | Applies | LAME tag: VBR quality, preset code, encoding flags. | Pass: V0–V2, CBR or ABR at 224 kbps and above, insane/extreme; Warn: V3 or lower, lower CBR/ABR rates, fast mode; no preset stored: not scored |
 | Ogg Vorbis | Adapted | Estimate -q level from nominal bitrate (no explicit field). | Pass: ≈ q5 or higher; Warn: ≈ q3 or lower |
 | FLAC | Not applicable | Compression level does not affect quality. |  |
 | Opus | Adapted | ENCODER_OPTIONS comment, when opusenc wrote it. | — |
@@ -263,8 +263,8 @@ Files are often renamed; .ogg can hold Vorbis, Opus, FLAC or Speex.
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |
-| MP3 | Applies | MPEG frame sync after any ID3v2 tag. | — |
-| Ogg Vorbis | Applies | OggS capture pattern, then \x01vorbis identification packet. | — |
+| MP3 | Applies | MPEG frame sync after any ID3v2 tag, confirmed by the next frame; RIFF/WAVE, AIFF, MP4, ASF, APE and WavPack are named from their magic numbers first, so their contents are never searched for frames (finding C8). | — |
+| Ogg Vorbis | Applies | OggS capture pattern, then \x01vorbis identification packet; an Ogg Skeleton stream beside it is allowed (finding N5). | — |
 | FLAC | Applies | fLaC marker, or Ogg stream whose first packet starts \x7FFLAC. | — |
 | Opus | Applies | Ogg stream whose first packet starts OpusHead. | — |
 
@@ -349,7 +349,7 @@ Garbage between frames or appended junk.
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |
-| MP3 | Applies | Bytes outside frames, ID3 and APE tags. | — |
+| MP3 | Applies | Bytes outside frames, ID3, APE and Lyrics3 tags. Zeros before the first frame count as padding, and an ID3v2 tag after junk is still a tag (finding H3). | — |
 | Ogg Vorbis | Applies | Bytes outside Ogg pages. | — |
 | FLAC | Applies | Bytes outside metadata blocks and frames. | — |
 | Opus | Applies | Bytes outside Ogg pages. | — |
@@ -691,7 +691,7 @@ Content resampled from a lower-rate source.
 - **Priority:** v1
 - **Reference:** Spek
 - **Method:** Look for empty spectrum above 11 / 16 kHz with a near-zero noise floor.
-- **Thresholds:** Pass: Not detected; Fail: Detected
+- **Thresholds:** Pass: Not detected; Fail: Detected. MP3 and Ogg Vorbis: reported as Warn and not scored (default weight 0, profile 1.1), because an encoder lowpass near 16 kHz (LAME 96–112 kbps, Vorbis q0–q2) looks the same as a 32 kHz source (finding H5)
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |

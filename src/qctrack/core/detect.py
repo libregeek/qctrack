@@ -25,7 +25,15 @@ class Format(enum.Enum):
     FLAC = "FLAC"
     SPEEX = "Speex"
     MPEG_LAYER_1_2 = "MPEG Layer I/II"
+    #: Ogg Skeleton: an index stream allowed beside Vorbis (Xiph's advice for .oga).
+    SKELETON = "Ogg Skeleton"
     OGG_OTHER = "Ogg (other)"
+    WAV = "WAV"
+    AIFF = "AIFF"
+    MP4 = "MP4/M4A"
+    ASF = "WMA/ASF"
+    APE = "Monkey's Audio"
+    WAVPACK = "WavPack"
     UNKNOWN = "Unknown"
 
     @property
@@ -43,7 +51,9 @@ class Detection:
     @property
     def supported(self) -> bool:
         if self.ogg_streams:
-            return all(s is Format.VORBIS for s in self.ogg_streams)
+            # Vorbis, optionally beside a Skeleton index stream (N5).
+            codecs = set(self.ogg_streams)
+            return Format.VORBIS in codecs and codecs <= {Format.VORBIS, Format.SKELETON}
         return self.format.supported
 
 
@@ -53,14 +63,39 @@ def detect_file(path: str | Path) -> Detection:
         return detect(f)
 
 
+#: Containers recognised by their leading bytes, so their contents are never searched for
+#: MPEG frame headers (random data can match two in a row; C8).
+_ASF_GUID = bytes.fromhex("3026b2758e66cf11a6d900aa0062ce6c")
+
+
+def _container(head: bytes) -> Format | None:
+    """A non-MPEG container named by its magic number, or None."""
+    if head[:4] == b"RIFF":
+        return Format.WAV if head[8:12] == b"WAVE" else Format.UNKNOWN
+    if head[:4] == b"FORM" and head[8:12] in (b"AIFF", b"AIFC"):
+        return Format.AIFF
+    if head[4:8] == b"ftyp":
+        return Format.MP4
+    if head[:16] == _ASF_GUID:
+        return Format.ASF
+    if head[:4] == b"MAC ":
+        return Format.APE
+    if head[:4] == b"wvpk":
+        return Format.WAVPACK
+    return None
+
+
 def detect(f: BinaryIO) -> Detection:
     start = skip_id3v2(f)
     f.seek(start)
-    head = f.read(4)
-    if head == b"fLaC":
+    head = f.read(16)
+    if head[:4] == b"fLaC":
         return Detection(Format.FLAC)
-    if head == b"OggS" and start == 0:
+    if head[:4] == b"OggS" and start == 0:
         return _detect_ogg(f)
+    container = _container(head)
+    if container is not None:
+        return Detection(container)
     layer = _find_mpeg_audio(f, start)
     if layer == 3:
         return Detection(Format.MP3)
@@ -165,6 +200,8 @@ def classify_ogg_packet(pkt: bytes) -> Format:
         return Format.FLAC
     if pkt.startswith(b"Speex   "):
         return Format.SPEEX
+    if pkt.startswith(b"fishead\x00"):
+        return Format.SKELETON
     return Format.OGG_OTHER
 
 
@@ -187,6 +224,7 @@ def _detect_ogg(f: BinaryIO) -> Detection:
         pos = page_end
     if not streams:
         return Detection(Format.UNKNOWN)
-    # An Ogg file counts as Vorbis only if its first stream is Vorbis; any other stream
-    # makes the file unsupported but never misreported as Vorbis (REQ-FMT-02).
-    return Detection(streams[0], tuple(streams))
+    # The file's format is its first stream that is not a Skeleton index. Any codec other
+    # than Vorbis makes it unsupported, never misreported as Vorbis (REQ-FMT-02).
+    main = next((s for s in streams if s is not Format.SKELETON), streams[0])
+    return Detection(main, tuple(streams))

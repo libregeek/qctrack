@@ -108,6 +108,15 @@ def test_junk_between_frames(tmp_path: Path) -> None:
     assert [(j.offset, j.length) for j in r.junk_regions] == [(10 * 417, 300)]
 
 
+def test_zero_padding_before_the_first_frame_is_padding(tmp_path: Path) -> None:
+    """H3: zeros after the ID3v2 tag are padding; other leading bytes are still junk."""
+    r = scan_mp3(write(tmp_path, id3v2(100) + bytes(4096) + frame() * 10))
+    assert r.unidentified_bytes == 0 and r.sync_losses == 0
+    assert r.metadata_bytes["padding"] == 4096 and r.audio_start == 110 + 4096
+    r = scan_mp3(write(tmp_path, id3v2(100) + bytes(100) + b"\x13" + bytes(99) + frame() * 10))
+    assert r.unidentified_bytes == 200 and "padding" not in r.metadata_bytes
+
+
 def test_junk_appended(tmp_path: Path) -> None:
     r = scan_mp3(write(tmp_path, frame() * 10 + b"\x13" * 1000))
     assert r.frame_count == 10 and r.unidentified_bytes == 1000

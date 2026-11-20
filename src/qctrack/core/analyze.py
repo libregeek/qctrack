@@ -6,7 +6,7 @@ bounded whatever the track length. The file is only ever opened read-only.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +22,7 @@ from qctrack.core.pcm import ChannelAnalyzer, ClippingAnalyzer
 from qctrack.core.profile import Profile
 from qctrack.core.scoring import (
     FactorResult,
+    Status,
     TrackScore,
     error_score,
     score_track,
@@ -37,7 +38,8 @@ Block = npt.NDArray[np.float32]
 
 #: Raise this whenever a change to pass 1 or 2 (or to the measurement types) would give a
 #: different result for the same file, so cached measurements are not reused (REQ-NFR-15).
-ANALYSER_VERSION = 3  # 2: Measured gained ``size``; 3: SpectrumResult gained ``fade_db``
+ANALYSER_VERSION = 4  # 2: Measured ``size``; 3: SpectrumResult ``fade_db``; 4: OggStream
+# ``header_bytes`` and zero padding before the first MP3 frame counted as padding
 
 
 @dataclass
@@ -114,6 +116,10 @@ def score_measured(measured: Measured, profile: Profile) -> TrackReport:
     else:
         report.factors = factor_results(measured.measurements, profile)
         report.score = score_track(report.factors, profile)
+        # A quick scan never decodes audio, so its rating is always provisional
+        # (REQ-ANL-02), whatever share of the weight pass 1 happens to cover.
+        if measured.measurements.decode_errors is None and report.score.status is Status.SCORED:
+            report.score = replace(report.score, status=Status.PROVISIONAL)
     return report
 
 

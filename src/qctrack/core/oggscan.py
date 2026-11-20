@@ -49,6 +49,10 @@ class OggStream:
     last_granule: int | None = None
     has_eos: bool = False
     last_pageno: int | None = None
+    #: Bytes of the pages before the first audio page (granule 0 or none): the header
+    #: packets, which can hold megabytes of cover art (C7).
+    header_bytes: int = 0
+    audio_started: bool = False
     vorbis: VorbisHeader | None = None
     #: Vendor string from the Vorbis comment header, if it was found.
     vendor: str | None = None
@@ -143,9 +147,11 @@ class OggScan:
 
     @property
     def average_bitrate_kbps(self) -> float:
-        """Page bytes of the Vorbis streams over their length."""
+        """Audio page bytes of the Vorbis streams over their length; header pages, which may
+        carry cover art, are left out."""
         d = self.duration_s
-        return sum(s.page_bytes for s in self.vorbis_streams) * 8 / d / 1000 if d else 0.0
+        audio = sum(s.page_bytes - s.header_bytes for s in self.vorbis_streams)
+        return audio * 8 / d / 1000 if d else 0.0
 
 
 def scan_ogg(path: str | Path) -> OggScan:
@@ -238,6 +244,11 @@ def _update(s: OggStream, flags: int, granule: int, pageno: int, length: int, r:
         elif pageno <= s.last_pageno:
             r.sequence_errors += 1
     s.last_pageno = pageno
+    if not s.audio_started:
+        if granule > 0:
+            s.audio_started = True
+        else:
+            s.header_bytes += length
     if granule == -1:  # no packet finishes on this page
         return
     if s.last_granule is not None and granule < s.last_granule:

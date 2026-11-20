@@ -73,7 +73,7 @@ def test_markup_in_tags_and_file_names_is_escaped(report_html: Path) -> None:
 
 def test_summary_table_and_details_are_present(report_html: Path) -> None:
     html = report_html.read_text()
-    assert "Profile default@1.0" in html and load_default().content_hash[:12] in html
+    assert "Profile default@1.1" in html and load_default().content_hash[:12] in html
     assert re.search(r"Scanned \d{4}-\d\d-\d\d \d\d:\d\d:\d\d[+-]\d\d:\d\d", html)
     assert html.count("<tr data-i=") == 4
     assert "Score distribution" in html and "Show as table" in html

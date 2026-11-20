@@ -48,8 +48,10 @@ _ORDER = {Verdict.PASS: 0, Verdict.WARN: 1, Verdict.FAIL: 2}
 _SUPPORTED_SAMPLE_RATES = (44100, 48000)
 #: Sample rates at or below this are Fail (F1.03).
 _LOW_SAMPLE_RATE = 24000
-#: First LAME release that counts as a current reference encoder (F1.05).
-_CURRENT_LAME = (3, 98)
+#: F1.05: LAME releases before this one predate its tuned presets and get a Warn.
+_OLD_LAME = (3, 90)
+#: F1.05: encoder strings with a known quality problem (lowercase prefixes).
+_POOR_ENCODERS = ("blade", "shine", "gogo", "xing")
 #: F2.02: a declared-length shortfall is material truncation (Fail, gate G2) only when it
 #: exceeds both of these. Anything smaller, such as a cut-short last frame, is a Warn.
 _TRUNCATION_MIN_S = 1.0
@@ -138,7 +140,9 @@ def _mp3_pass1(s: Mp3Scan, profile: Profile) -> list[FactorResult]:
     out.append(
         _categorical("F1.04", Verdict.WARN if mode == "Mono" else Verdict.PASS, mode or "unknown")
     )
-    out.append(_encoder(s))
+    encoder = _encoder(s)
+    if encoder is not None:
+        out.append(encoder)
     quality = _quality_setting(s)
     if quality is not None:
         out.append(quality)
@@ -243,14 +247,25 @@ def _ogg_truncation(o: OggScan) -> FactorResult:
     return _categorical("F2.02", Verdict.PASS, "complete")
 
 
-_LAME_VERSION = re.compile(r"^LAME(\d+)\.(\d+)")
+_LAME_VERSION = re.compile(r"^L(?:AME)?(\d+)\.(\d+)")
 
 
-def _encoder(s: Mp3Scan) -> FactorResult:
-    name = s.encoder or "none stored"
+def _encoder(s: Mp3Scan) -> FactorResult | None:
+    """F1.05. Only an identified encoder is judged (H4): FFmpeg's ``Lavc``/``Lavf`` strings
+    mean its libmp3lame, i.e. LAME; old LAME and encoders with known problems are a Warn;
+    anything unidentified is left out rather than penalised for being a different tool."""
+    name = (s.encoder or "").strip()
+    if not name:
+        return None
+    if name.startswith(("Lavc", "Lavf")):
+        return _categorical("F1.05", Verdict.PASS, f"{name} (FFmpeg libmp3lame)")
     m = _LAME_VERSION.match(name)
-    current = m is not None and (int(m.group(1)), int(m.group(2))) >= _CURRENT_LAME
-    return _categorical("F1.05", Verdict.PASS if current else Verdict.WARN, name)
+    if m is not None:
+        old = (int(m.group(1)), int(m.group(2))) < _OLD_LAME
+        return _categorical("F1.05", Verdict.WARN if old else Verdict.PASS, name)
+    if name.lower().startswith(_POOR_ENCODERS):
+        return _categorical("F1.05", Verdict.WARN, name)
+    return None
 
 
 def _vbr_preset(lame: LameTag) -> int | None:
@@ -269,8 +284,8 @@ def _quality_setting(s: Mp3Scan) -> FactorResult | None:
     v = _vbr_preset(lame)
     if v is not None:
         verdict = Verdict.PASS if v <= 2 else Verdict.WARN
-    elif name == "insane" or (lame.preset == 320 and s.mode is not Mp3Mode.VBR):
-        verdict = Verdict.PASS
+    elif name == "insane" or (224 <= lame.preset <= 320 and s.mode is not Mp3Mode.VBR):
+        verdict = Verdict.PASS  # CBR or ABR at 224 kbps and above (H4)
     else:
         verdict = Verdict.WARN  # lower CBR/ABR rates, fast presets, r3mix, medium
     return _categorical("F1.06", verdict, name)
@@ -382,9 +397,20 @@ def _spectral_factors(
                         f"declared {d.declared_hz} Hz, measured {d.measured_hz:.0f} Hz",
                     )
                 )
-    upsampled = [r.upsampled_from_hz for r in measured if r.upsampled_from_hz]
-    if upsampled:
-        out.append(_categorical("F3.06", Verdict.FAIL, f"looks resampled from {upsampled[0]} Hz"))
+    # F3.06 is reported, not scored (weight 0 in the default profile): in a lossy file an
+    # encoder lowpass near a lower rate's Nyquist looks the same as resampling (H5). It is a
+    # Warn, not a Fail, so the report does not present it as a defect.
+    up = [r for r in measured if r.upsampled_from_hz]
+    if up:
+        r = up[0]
+        out.append(
+            _categorical(
+                "F3.06",
+                Verdict.WARN,
+                f"cliff at {r.cutoff_hz / 1000:.2f} kHz, as from a {r.upsampled_from_hz} Hz "
+                "source or this encoder's lowpass",
+            )
+        )
     else:
         out.append(_categorical("F3.06", Verdict.PASS, "not detected"))
     return out

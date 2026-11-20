@@ -464,7 +464,7 @@ def _scan(buf: mmap.mmap | bytes, size: int, lead: int) -> Mp3Scan:
         if buf[pos : pos + 3] == b"ID3":
             n = _skip_inline_id3(buf, pos, audio_end)
             if n:
-                _close_junk(r, junk_start, pos)
+                _close_lead(r, buf, junk_start, pos, first)
                 junk_start = None
                 r.metadata_bytes["ID3v2"] += n
                 pos += n
@@ -483,6 +483,12 @@ def _scan(buf: mmap.mmap | bytes, size: int, lead: int) -> Mp3Scan:
                     r.sync_losses += 1
             pos += 1
             nxt = _resync(buf, pos, audio_end)
+            # A valid ID3v2 tag inside the junk ends it too, so the tag is not counted as
+            # junk (the loop then reads it as metadata).
+            inline = _find_inline_id3(buf, pos, audio_end if nxt is None else nxt)
+            if inline is not None:
+                pos = inline
+                continue
             if nxt is None:
                 # Nothing valid remains. A cut-off header at the very end is truncation.
                 tail = audio_end - junk_start
@@ -493,7 +499,7 @@ def _scan(buf: mmap.mmap | bytes, size: int, lead: int) -> Mp3Scan:
                 break
             pos = nxt
             continue
-        _close_junk(r, junk_start, pos)
+        _close_lead(r, buf, junk_start, pos, first)
         junk_start = None
         prev = h
         length, kbps, rate, version, layer, spf = h
@@ -555,6 +561,18 @@ def _skip_inline_id3(buf: mmap.mmap | bytes, pos: int, end: int) -> int:
     return n if pos + n <= end else 0
 
 
+def _find_inline_id3(buf: mmap.mmap | bytes, pos: int, end: int) -> int | None:
+    """Offset of the first valid ID3v2 tag in ``[pos, end)``, or None."""
+    while pos < end:
+        i = buf.find(b"ID3", pos, end)
+        if i < 0:
+            return None
+        if _skip_inline_id3(buf, i, len(buf)):
+            return i
+        pos = i + 1
+    return None
+
+
 def _resync(buf: mmap.mmap | bytes, pos: int, end: int) -> int | None:
     """Find the next position where a frame, confirmed by its successor, starts."""
     while pos < end:
@@ -565,6 +583,17 @@ def _resync(buf: mmap.mmap | bytes, pos: int, end: int) -> int | None:
             return i
         pos = i + 1
     return None
+
+
+def _close_lead(
+    r: Mp3Scan, buf: mmap.mmap | bytes, start: int | None, end: int, first: bool
+) -> None:
+    """Close a junk region; zeros before the first frame are padding (often left by tag
+    editors around ID3v2 tags), not damage (H3)."""
+    if first and start is not None and end > start and not any(buf[start:end]):
+        r.metadata_bytes["padding"] += end - start
+    else:
+        _close_junk(r, start, end)
 
 
 def _close_junk(r: Mp3Scan, start: int | None, end: int) -> None:

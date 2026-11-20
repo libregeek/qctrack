@@ -76,6 +76,16 @@ def write(tmp_path: Path, data: bytes) -> Path:
     return p
 
 
+def test_header_pages_are_left_out_of_the_bitrate(tmp_path: Path) -> None:
+    """C7: the header packets (which may hold cover art) are not audio."""
+    data = stream(7, (44100, 88200))
+    r = scan_ogg(write(tmp_path, data))
+    s = r.streams[0]
+    header = len(page(7, 0, vorbis_id(), 0, 0x02) + page(7, 1, comment(), 0))
+    assert s.header_bytes == header and s.audio_started
+    assert r.average_bitrate_kbps == pytest.approx((len(data) - header) * 8 / 2.0 / 1000)
+
+
 def test_clean_stream(tmp_path: Path) -> None:
     r = scan_ogg(write(tmp_path, stream(7, (44100, 88200))))
     assert (r.pages, r.link_count, r.crc_failures) == (4, 1, 0)

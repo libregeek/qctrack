@@ -1,6 +1,8 @@
+import struct
 from pathlib import Path
 
 import pytest
+from mutagen.oggvorbis import OggVorbis
 
 from helpers import encode
 from qctrack.cli.main import main
@@ -84,6 +86,72 @@ def test_truncation_gates_only_material_loss(library: Path, tmp_path: Path) -> N
         assert r.score.gates == gates, (name, r.score)
         if not gates:
             assert r.score.rating in ("A", "B"), (name, r.score)
+
+
+def _ogg_page(serial: int, seq: int, flags: int, packet: bytes) -> bytes:
+    head = b"OggS" + struct.pack("<BBqIII", 0, flags, 0, serial, seq, 0)
+    page = bytearray(head + bytes([1, len(packet)]) + packet)
+    page[22:26] = _ogg_crc(bytes(page)).to_bytes(4, "little")
+    return bytes(page)
+
+
+def _with_skeleton(ogg: bytes) -> bytes:
+    """The same Vorbis file with an Ogg Skeleton stream: its fishead page before the Vorbis
+    beginning-of-stream page and its (empty) end page right after, as the format requires."""
+    fishead = b"fishead\x00" + struct.pack("<HH", 3, 0) + bytes(52)
+    nseg = ogg[26]
+    first_end = 27 + nseg + sum(ogg[27 : 27 + nseg])
+    return (
+        _ogg_page(0x5EED, 0, 0x02, fishead)
+        + ogg[:first_end]
+        + _ogg_page(0x5EED, 1, 0x04, b"")
+        + ogg[first_end:]
+    )
+
+
+def test_parser_fixes_on_real_files(library: Path, tmp_path: Path) -> None:
+    """7.5: a Skeleton stream, cover art in the Vorbis header, zero padding after the ID3v2
+    tag and an MP4 named .mp3."""
+    ogg = (library / "v.ogg").read_bytes()
+    (tmp_path / "skeleton.oga").write_bytes(_with_skeleton(ogg))
+    skel = analyze_file(tmp_path / "skeleton.oga", P)
+    plain = analyze_file(library / "v.ogg", P)
+    assert skel.score.status is Status.SCORED, skel.message
+    assert skel.score.final_score == plain.score.final_score
+
+    art = tmp_path / "art.ogg"
+    art.write_bytes(ogg)
+    tags = OggVorbis(art)
+    tags["COMMENT"] = "x" * 1_000_000  # as large as embedded cover art
+    tags.save()
+    rate = {r.factor: r for r in analyze_file(art, P).factors}["F1.01"].detail
+    assert rate == {r.factor: r for r in plain.factors}["F1.01"].detail
+
+    mp3 = (library / "a.mp3").read_bytes()
+    padded = tmp_path / "padded.mp3"
+    tag_end = 0
+    if mp3[:3] == b"ID3":  # FFmpeg writes its own tag: pad after it, as tag editors do
+        size = mp3[6] << 21 | mp3[7] << 14 | mp3[8] << 7 | mp3[9]
+        tag_end = 10 + size
+    padded.write_bytes(mp3[:tag_end] + bytes(4096) + mp3[tag_end:])
+    f203 = {r.factor: r for r in analyze_file(padded, P).factors}["F2.03"]
+    assert f203.verdict is not None and f203.verdict.value == "Pass", f203
+    # Zeros before the tag, too (a tag rewritten in place with leftover space).
+    padded.write_bytes(_id3v2(200) + bytes(4096) + mp3)
+    f203 = {r.factor: r for r in analyze_file(padded, P).factors}["F2.03"]
+    assert f203.verdict is not None and f203.verdict.value == "Pass", f203
+
+    m4a = tmp_path / "song.mp3"
+    encode(m4a.with_suffix(".m4a"), "-c:a", "aac", "-b:a", "128k")
+    m4a.write_bytes(m4a.with_suffix(".m4a").read_bytes())
+    r = analyze_file(m4a, P)
+    assert r.score.status is Status.UNSUPPORTED and r.detection is not None
+    assert r.detection.format.value == "MP4/M4A"
+
+
+def _id3v2(size: int) -> bytes:
+    syncsafe = bytes((size >> s) & 0x7F for s in (21, 14, 7, 0))
+    return b"ID3\x03\x00\x00" + syncsafe + bytes(size)
 
 
 def test_unsupported_unreadable_and_missing(library: Path, tmp_path: Path) -> None:

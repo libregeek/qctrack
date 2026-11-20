@@ -133,7 +133,8 @@ FACTORS: dict[str, tuple[str, str]] = {
     ),
     "F3.06": (
         "Upsampling detection",
-        "Content resampled from a lower-rate source.",
+        "Content resampled from a lower-rate source. Reported only for MP3 and Vorbis, where "
+        "an encoder's own lowpass looks the same.",
     ),
     "F3.07": (
         "Double-compression markers",
