@@ -98,3 +98,22 @@ def test_bad_color_value_is_a_usage_error() -> None:
     with pytest.raises(SystemExit) as exc:
         main(["scan", "--color", "rainbow", "x.mp3"])
     assert exc.value.code == 2
+
+
+def test_actions_get_their_own_colours(library: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Greens for keep, red for replacing a lossy source; the summary line matches."""
+    main(["scan", "--color", "always", str(library)])
+    out = capsys.readouterr().out
+    rows = {Path(ANSI.sub("", ln).split()[0]).name: ln for ln in out.splitlines() if ".mp3" in ln}
+    assert "\033[31mReplace: lossy source" in rows["fake.mp3"]
+    summary = next(ln for ln in out.splitlines() if ANSI.sub("", ln).startswith("Actions:"))
+    assert "\033[31mReplace: lossy source 1\033[0m" in summary
+
+
+def test_action_palette() -> None:
+    p = Painter(True)
+    assert p.action("Keep") == "\033[1;32mKeep\033[0m"
+    assert p.action("Keep: source-limited") == "\033[32mKeep: source-limited\033[0m"
+    assert p.action("Replace: damaged  ") == "\033[1;31mReplace: damaged  \033[0m"
+    assert p.action("Undetermined") == "\033[36mUndetermined\033[0m"
+    assert Painter(False).action("Keep") == "Keep"

@@ -31,6 +31,9 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .r-C { background: #fdf0c8; color: #6b4e00; } .r-D { background: #fde0d0; color: #8a3a0a; }
 .r-F { background: #fbd9d9; color: #8c1d1d; }
 .r-unsupported { background: #e3e7f2; color: #3a4261; } .r-error { background: #fbd9d9; color: #8c1d1d; }
+.a-keep { background: #dff3e3; color: #0b5d1e; } .a-keep-limited { background: #eef6e4; color: #3d5f0f; }
+.a-undetermined { background: #e3e7f2; color: #3a4261; } .a-optional { background: #fdf0c8; color: #6b4e00; }
+.a-replace { background: #fde0d0; color: #8a3a0a; } .a-damaged { background: #fbd9d9; color: #8c1d1d; }
 .hist { display: block; width: 100%; max-width: 520px; height: auto; }
 .hist .bar { fill: var(--series); }
 .hist text { fill: var(--ink-2); font-size: 11px; text-anchor: middle; }
@@ -102,8 +105,8 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
 </div>
 {% if actions %}
 <div class="tiles">
-{% for name, n in actions %}
-  <div class="tile"><b>{{ n }}</b><span>{{ name }}</span></div>
+{% for name, n, cls in actions %}
+  <div class="tile"><b>{{ n }}</b><span><span class="badge {{ cls }}">{{ name }}</span></span></div>
 {% endfor %}
 </div>
 {% endif %}
@@ -145,8 +148,8 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
 {% for number, note, masters, members in copy_groups %}
 <h3>{{ number }}. {{ note }}{% if masters %} (likely different masters){% endif %}</h3>
 <table class="ftable"><thead><tr><th class="num">Rank</th><th>File</th><th class="num">Score</th><th>Rating</th><th>Action</th></tr></thead><tbody>
-{% for rank, path, score, rating, action in members %}
-<tr><td class="num">{{ rank }}</td><td class="path">{{ path }}</td><td class="num">{{ score }}</td><td>{{ rating }}</td><td>{{ action }}</td></tr>
+{% for rank, path, score, rating, action, cls in members %}
+<tr><td class="num">{{ rank }}</td><td class="path">{{ path }}</td><td class="num">{{ score }}</td><td>{{ rating }}</td><td><span class="badge {{ cls }}">{{ action }}</span></td></tr>
 {% endfor %}
 </tbody></table>
 {% endfor %}
@@ -165,7 +168,7 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
   </select>
   <select id="action" aria-label="Filter by action" disabled>
     <option value="">All actions</option>
-{% for name, n in actions %}
+{% for name, n, cls in actions %}
     <option value="{{ name }}">{{ name }}</option>
 {% endfor %}
   </select>
@@ -189,7 +192,7 @@ tr.detail > td { background: var(--panel); padding: 12px 16px 16px 40px; }
 </tr></thead>
 <tbody>
 {% for r in rows %}
-<tr data-i="{{ r.index }}" data-rating="{{ r.rating.rstrip('*') }}" data-action="{{ r.action }}"><td><button type="button" class="toggle" aria-expanded="false" aria-label="Show details" hidden></button></td><td>{{ r.album }}</td><td>{{ r.title }}</td><td>{{ r.artist }}</td><td class="path">{{ r.path }}</td><td>{{ r.codec }}</td><td class="num" data-sort="{{ r.score_sort }}">{{ r.score }}</td><td><span class="badge r-{{ r.rating_class }}">{{ r.rating }}</span></td><td>{{ r.best_copy }}</td><td data-sort="{{ r.action_sort }}">{{ r.action }}</td><td>{{ r.gates }}</td></tr>
+<tr data-i="{{ r.index }}" data-rating="{{ r.rating.rstrip('*') }}" data-action="{{ r.action }}"><td><button type="button" class="toggle" aria-expanded="false" aria-label="Show details" hidden></button></td><td>{{ r.album }}</td><td>{{ r.title }}</td><td>{{ r.artist }}</td><td class="path">{{ r.path }}</td><td>{{ r.codec }}</td><td class="num" data-sort="{{ r.score_sort }}">{{ r.score }}</td><td><span class="badge r-{{ r.rating_class }}">{{ r.rating }}</span></td><td>{{ r.best_copy }}</td><td data-sort="{{ r.action_sort }}">{% if r.action %}<span class="badge {{ r.action_class }}">{{ r.action }}</span>{% endif %}</td><td>{{ r.gates }}</td></tr>
 {% endfor %}
 </tbody>
 </table>

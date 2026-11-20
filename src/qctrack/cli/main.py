@@ -354,10 +354,8 @@ def _print_table(reports: Sequence[TrackReport], paint: Painter) -> None:
             return paint(text, "red") if tone == "error" else paint(text, "cyan")
         if col == _GATES:
             return paint(text, "yellow")
-        if col == _ACTION and text in ("Replace: low bitrate", "Consider another master"):
-            return paint(text, "yellow")  # the least urgent actions
-        if col == _ACTION and text.startswith("Replace"):
-            return paint(text, "red")
+        if col == _ACTION:
+            return paint.action(text)
         if col == _NOTES:
             return paint(text, "dim")
         return text
@@ -407,7 +405,10 @@ def _summary(reports: Sequence[TrackReport], paint: Painter | None = None) -> st
     actions = Counter(r.advice.action for r in reports if r.advice is not None)
     if not actions:
         return line
-    listed = ", ".join(f"{a.value} {actions[a]}" for a in sorted(actions, key=lambda a: a.priority))
+    listed = ", ".join(
+        paint.action(f"{a.value} {actions[a]}", a.value)
+        for a in sorted(actions, key=lambda a: a.priority)
+    )
     return f"{line}\n{paint('Actions:', 'bold')} {listed}"
 
 
@@ -434,7 +435,10 @@ def _print_groups(groups: Sequence[CopyGroup], paint: Painter) -> None:
         for r in g.members:
             action = r.advice.action.value if r.advice else ""
             score = f"{r.score.final_score:.1f}" if r.score.final_score is not None else "-"
-            print(f"     {r.copy_rank}. {r.path}  {score} {r.score.rating or ''}  {action}")
+            print(
+                f"     {r.copy_rank}. {r.path}  {score} {r.score.rating or ''}  "
+                + paint.action(action)
+            )
 
 
 def _print_details(report: TrackReport, paint: Painter) -> None:

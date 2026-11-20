@@ -51,6 +51,8 @@ class Row:
     action: str
     #: Action priority (1 most urgent) for sorting; empty when there is no action.
     action_sort: str
+    #: CSS class of the action badge.
+    action_class: str
     gates: str
 
 
@@ -61,6 +63,19 @@ class Bar:
     x: float
     y: float
     height: float
+
+
+#: Badge colour per action: greens for keep, amber for optional replacements, reds for the
+#: ones that matter, neutral when the tool cannot tell (same palette as the ratings).
+ACTION_CLASS = {
+    Action.KEEP: "a-keep",
+    Action.KEEP_SOURCE_LIMITED: "a-keep-limited",
+    Action.UNDETERMINED: "a-undetermined",
+    Action.CONSIDER_MASTER: "a-optional",
+    Action.REPLACE_LOW_BITRATE: "a-optional",
+    Action.REPLACE_SOURCE: "a-replace",
+    Action.REPLACE_DAMAGED: "a-damaged",
+}
 
 
 def _num(value: float | None) -> str:
@@ -92,6 +107,7 @@ def _row(i: int, r: TrackReport) -> Row:
         r.advice.best_copy.value if r.advice else "",
         r.advice.action.value if r.advice else "",
         str(r.advice.action.priority) if r.advice else "",
+        ACTION_CLASS[r.advice.action] if r.advice else "",
         ";".join(s.gates),
     )
 
@@ -215,7 +231,8 @@ def write_html(
             "different_masters" in (members[0].advice.flags if members[0].advice else ()),
             [
                 (r.copy_rank, str(r.path), _num(r.score.final_score) or "-", r.score.rating or "",
-                 r.advice.action.value if r.advice else "")
+                 r.advice.action.value if r.advice else "",
+                 ACTION_CLASS[r.advice.action] if r.advice else "")
                 for r in sorted(members, key=lambda r: r.copy_rank or 0)
             ],
         )
@@ -234,7 +251,7 @@ def write_html(
             rows=rows,
             total=len(reports),
             ratings=[(k, ratings[k]) for k in "ABCDF"],
-            actions=[(a.value, actions[a]) for a in Action if actions[a]],
+            actions=[(a.value, actions[a], ACTION_CLASS[a]) for a in Action if actions[a]],
             provisional=status[Status.PROVISIONAL],
             unsupported=status[Status.UNSUPPORTED],
             errors=status[Status.ERROR],

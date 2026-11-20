@@ -31,6 +31,17 @@ RATING_STYLE: Mapping[str, tuple[str, ...]] = {
     "D": ("red",),
     "F": ("bold", "red"),
 }
+#: Colours by replacement action (requirements 5.9): greens for keep, yellow for the
+#: optional replacements, red for the ones that matter, cyan when the tool cannot tell.
+ACTION_STYLE: Mapping[str, tuple[str, ...]] = {
+    "Keep": ("bold", "green"),
+    "Keep: source-limited": ("green",),
+    "Undetermined": ("cyan",),
+    "Consider another master": ("yellow",),
+    "Replace: low bitrate": ("yellow",),
+    "Replace: lossy source": ("red",),
+    "Replace: damaged": ("bold", "red"),
+}
 VERDICT_STYLE: Mapping[str, tuple[str, ...]] = {
     "Pass": ("green",),
     "Warn": ("yellow",),
@@ -67,3 +78,7 @@ class Painter:
 
     def verdict(self, text: str, verdict: str) -> str:
         return self(text, *VERDICT_STYLE.get(verdict, ()))
+
+    def action(self, text: str, action: str | None = None) -> str:
+        """``text`` in the colour of ``action`` (default: the text itself names it)."""
+        return self(text, *ACTION_STYLE.get(action or text.strip(), ()))
