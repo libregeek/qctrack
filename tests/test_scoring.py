@@ -32,9 +32,7 @@ def full(score: float, **override: float) -> list[FactorResult]:
 
 def test_sample_row_1_final_score_and_rating() -> None:
     # Objective scores 94.0 / 98.5 / 96.0 / 90.0 combine to 94.9, rating A, no gates.
-    s = score_track(
-        [fr("F1.01", 94.0), fr("F2.01", 98.5), fr("F3.01", 96.0), fr("F2.07", 90.0)], P
-    )
+    s = score_track([fr("F1.01", 94.0), fr("F2.01", 98.5), fr("F3.01", 96.0), fr("F2.07", 90.0)], P)
     assert s.objectives == {"O1": 94.0, "O2": 98.5, "O3": 96.0, "O4": 90.0}
     assert (s.final_score, s.rating, s.gates, s.coverage_pct) == (94.9, "A", (), 100.0)
     assert s.status is Status.SCORED
