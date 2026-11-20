@@ -217,7 +217,7 @@ def advise(
             verdict,
             Action.KEEP_SOURCE_LIMITED,
             f"high frequencies are faint, so the encoder coded them only in {share:g}% of "
-            "loud frames; not made from a lower-bitrate source",
+            "loud frames; unlikely to come from a lower-bitrate source",
             flags,
         )
     return Advice(verdict, Action.KEEP, "", flags)

@@ -401,7 +401,7 @@ def _spectral_factors(
             if worst.protection is Protection.CONTENT_ABOVE:
                 detail += (
                     f"; content above the wall in {worst.top_band_share:g}% of loud frames, "
-                    "which a lower-bitrate source cannot have: not a transcode"
+                    "so a lower-bitrate source is unlikely: not treated as a transcode"
                 )
             elif worst.protection is Protection.FADE:
                 detail += (

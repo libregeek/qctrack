@@ -54,7 +54,8 @@ VBR_HIGH_KBPS = 220.0
 class Protection(enum.Enum):
     """Why an F3.02 Fail was lowered to a Warn (no gate G4)."""
 
-    #: Real content above the wall in some frames: not made from a lower-bitrate source.
+    #: Real content above the wall in some frames: unlikely to come from a lower-bitrate
+    #: source (a CBR source has nothing above its lowpass; a VBR one could look alike).
     CONTENT_ABOVE = "content above the wall"
     #: Nothing above the wall, but the content fades before it: a dark source or a
     #: re-encode, which cannot be told apart.
