@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from qctrack.core.authenticity import (
     MIN_RATE_HZ,
     ClaimedVsEffective,
+    Protection,
     Verdict,
     claimed_vs_effective,
     declared_vs_measured,
@@ -397,10 +398,15 @@ def _spectral_factors(
         if worst is not None:
             said, found = worst.claimed.name.lower(), worst.effective.name.lower()
             detail = f"claims {said}, content supports {found}"
-            if worst.protected:
+            if worst.protection is Protection.CONTENT_ABOVE:
                 detail += (
-                    f"; content fades {worst.fade_db:.0f} dB before the wall, as when the "
-                    "encoder drops faint highs, so not treated as a transcode"
+                    f"; content above the wall in {worst.top_band_share:g}% of loud frames, "
+                    "which a lower-bitrate source cannot have: not a transcode"
+                )
+            elif worst.protection is Protection.FADE:
+                detail += (
+                    f"; nothing above the wall, but the content fades {worst.fade_db:.0f} dB "
+                    "before it: a dark source or a re-encode, cannot tell"
                 )
             out.append(_categorical("F3.02", worst.verdict, detail))
         if lowpass_hz > 0:
@@ -438,12 +444,12 @@ def mp3_claim(m: TrackMeasurements) -> ClaimedVsEffective | None:
     """The worst F3.02 outcome over the file's stretches (MP3 only), or None."""
     if m.mp3 is None:
         return None
-    lame = m.mp3.lame
-    preset = lame.preset_name if lame else None
+    s = m.mp3
+    preset = s.lame.preset_name if s.lame else None
+    kbps = s.average_bitrate_kbps * (2 if s.channel_mode == "Mono" else 1)
+    vbr_without_preset = s.mode is Mp3Mode.VBR and preset is None
     claims = [
-        claimed_vs_effective(r, m.mp3.average_bitrate_kbps, preset)
-        for r in m.spectrum
-        if r.measured
+        claimed_vs_effective(r, kbps, preset, vbr_without_preset) for r in m.spectrum if r.measured
     ]
     valid = [c for c in claims if c is not None]
     return max(valid, key=lambda c: (_ORDER[c.verdict], c.bands_lower)) if valid else None

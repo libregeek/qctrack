@@ -8,7 +8,9 @@ import pytest
 
 from qctrack.core.authenticity import (
     FADE_PROTECT_DB,
+    TOP_BAND_PROTECT_SHARE,
     Band,
+    Protection,
     Verdict,
     claimed_band,
     claimed_vs_effective,
@@ -140,11 +142,13 @@ def test_empty_input() -> None:
 # --- derived factors --------------------------------------------------------------------
 
 
-def fake(cutoff: float, rate: int = RATE, fade: float | None = 3.0) -> SpectrumResult:
+def fake(
+    cutoff: float, rate: int = RATE, fade: float | None = 3.0, share: float | None = 0.0
+) -> SpectrumResult:
     cliff = cutoff < rate / 2 - 500
     return SpectrumResult(
         rate=rate, measured=True, nyquist_hz=rate / 2, cutoff_hz=cutoff, has_cliff=cliff,
-        fade_db=fade if cliff else None,
+        fade_db=fade if cliff else None, top_band_share=share if cliff else None,
     )  # fmt: skip
 
 
@@ -193,11 +197,45 @@ def test_no_cliff_means_full_band() -> None:
     assert v and v.effective is Band.HIGH and v.verdict is Verdict.PASS
 
 
+def test_content_above_the_wall_is_not_a_transcode() -> None:
+    """A lower-bitrate source has nothing above its lowpass in any frame; content above
+    the wall in some loud frames means the encoder dropped faint highs frame by frame."""
+    above = claimed_vs_effective(fake(16200, share=TOP_BAND_PROTECT_SHARE), 320)
+    assert above and above.verdict is Verdict.WARN
+    assert above.protection is Protection.CONTENT_ABOVE and not above.triggers_g4
+    # It wins over the fade: evidence of content beats "cannot tell".
+    both = claimed_vs_effective(fake(16200, fade=30.0, share=10.0), 320)
+    assert both and both.protection is Protection.CONTENT_ABOVE
+    none = claimed_vs_effective(fake(16200, share=TOP_BAND_PROTECT_SHARE - 0.1), 320)
+    assert none and none.verdict is Verdict.FAIL and none.protection is None
+
+
+def test_vbr_without_a_preset_claims_high_from_220_kbps() -> None:
+    assert claimed_band(242, None, vbr_without_preset=True) is Band.HIGH
+    assert claimed_band(242, None) is Band.MEDIUM  # CBR/ABR: by the bitrate table
+    assert claimed_band(200, None, vbr_without_preset=True) is Band.MEDIUM
+    assert claimed_band(242, "V2", vbr_without_preset=True) is Band.MEDIUM  # preset wins
+
+
+def test_top_band_share_counts_frames_with_content_above_the_wall() -> None:
+    """Noise brick-walled at 16 kHz, with full-band bursts in some frames, as an encoder
+    that codes the top band only in louder frames would leave."""
+    base = lowpassed_noise(16000, seconds=12)
+    wide = lowpassed_noise(None, seconds=12, seed=5)
+    mixed = base.copy()
+    for k in range(0, len(base) // FFT_SIZE, 10):  # every 10th frame: 10%
+        mixed[k * FFT_SIZE : (k + 1) * FFT_SIZE] = wide[k * FFT_SIZE : (k + 1) * FFT_SIZE]
+    plain, bursts = measure(base), measure(mixed)
+    assert plain.has_cliff and plain.top_band_share is not None and plain.top_band_share < 1
+    assert bursts.has_cliff and bursts.top_band_share is not None
+    assert 5 <= bursts.top_band_share <= 15
+
+
 def test_fading_content_before_the_wall_is_not_a_transcode() -> None:
     """N1: LAME drops faint highs (sfb21) even at 320 kbps, leaving a wall near 16 kHz that
     is reached only after the content has faded. That is at most a Warn, never gate G4."""
     faded = claimed_vs_effective(fake(16200, fade=FADE_PROTECT_DB), 320)
-    assert faded and faded.verdict is Verdict.WARN and faded.protected
+    assert faded and faded.verdict is Verdict.WARN and faded.protection is Protection.FADE
     assert faded.bands_lower == 3 and not faded.triggers_g4
     full = claimed_vs_effective(fake(16200, fade=FADE_PROTECT_DB - 0.1), 320)
     assert full and full.verdict is Verdict.FAIL and not full.protected
@@ -318,8 +356,9 @@ def test_dark_source_at_320_is_not_a_transcode(tmp_path: Path, corner: int) -> N
     assert v is not None
     # The encoder's wall lands two or more bands below the 320 kbps claim ...
     assert spec.has_cliff and spec.cutoff_hz < 16500 and v.bands_lower >= 2
-    # ... but the content fades before it, so this is a Warn and never gate G4.
-    assert v.protected and v.verdict is Verdict.WARN and not v.triggers_g4
+    # ... nothing above it (a steady dark source loses the top band in every frame) but
+    # the content fades before it: a Warn, never gate G4, and "cannot tell".
+    assert v.protection is Protection.FADE and v.verdict is Verdict.WARN and not v.triggers_g4
 
 
 def test_vorbis_cutoff_is_measured(tmp_path: Path) -> None:

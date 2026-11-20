@@ -25,6 +25,14 @@ are starting values to tune with the labelled corpus, T10 and T11):
   frequencies are already faint, LAME codes nothing in its top scalefactor band (sfb21, from
   about 16 kHz at 44.1 kHz) even at 320 kbps, which also leaves a wall, but only after the
   content has faded (23-30 dB on test signals). F3.02 uses it to tell the two apart.
+* The *top-band share* is the share of loud frames that carry real content in the
+  2 kHz above the wall: the band level is at least :data:`TOP_CONTENT_DB` above its own
+  floor (its 10th percentile over the loud frames). A file made from a lower-bitrate source
+  cannot have content above that source's lowpass in any frame (0-0.4% on test signals,
+  from start and end frames); LAME's sfb21 cut works frame by frame, so a genuine file
+  still codes the top band in louder frames (3-40% on real music). The average spectrum
+  hides this; per-frame levels in coarse :data:`TOP_BAND_HZ` bands from
+  :data:`TOP_START_HZ` up are kept for it (about 100 bytes a frame).
 * *Upsampling* is reported when a cliff sits just under the Nyquist frequency of a common
   lower sample rate. A genuine band-limited file can look the same (matrix F3.06: "report
   together with the cutoff"), so this is evidence and not a verdict.
@@ -63,6 +71,13 @@ EDGE_HZ = 500.0
 SPAN_HZ = 1000.0
 #: Reference stretch for the fade, as fractions of the cutoff frequency.
 FADE_REF = (0.6, 0.75)
+#: Per-frame top-band levels: band width and lowest band edge.
+TOP_BAND_HZ = 500.0
+TOP_START_HZ = 10000.0
+#: A frame has content above the wall when that band is this far above its own floor.
+TOP_CONTENT_DB = 20.0
+#: The band examined starts this far above the wall and spans TOP_SPAN_HZ.
+TOP_GAP_HZ, TOP_SPAN_HZ = 300.0, 2000.0
 #: Common source sample rates tested for F3.06.
 SOURCE_RATES = (11025, 12000, 16000, 22050, 24000, 32000)
 #: Cutoff window, relative to the source Nyquist, that matches a resampled file.
@@ -100,6 +115,9 @@ class SpectrumResult:
     upsampled_from_hz: int | None = None
     #: dB the spectrum falls from FADE_REF of the cutoff to the plateau; None without a cliff.
     fade_db: float | None = None
+    #: Percent of loud frames with real content above the wall; None without a cliff or
+    #: when the band above the wall cannot be examined.
+    top_band_share: float | None = None
     #: The averaged spectrum in dBFS, bin k at ``k * rate / FFT_SIZE`` Hz (None if unmeasured).
     mean_spectrum_db: Spectrum | None = field(default=None, repr=False)
 
@@ -129,6 +147,36 @@ def fade_before_cutoff(r: SpectrumResult) -> float | None:
         np.asarray(r.mean_spectrum_db, dtype=np.float64), max(3, round(SMOOTH_HZ / res)) | 1
     )
     return _fade(sm, res, r.cutoff_hz, r.plateau_db)
+
+
+def _top_bins(rate: int) -> tuple[int, int, int]:
+    """First bin, bin width and count of the coarse top bands at ``rate``."""
+    res = rate / FFT_SIZE
+    start = int(np.ceil(TOP_START_HZ / res))
+    width = max(1, round(TOP_BAND_HZ / res))
+    count = max(0, (FFT_SIZE // 2 + 1 - start) // width)
+    return start, width, count
+
+
+def top_band_share(rows: npt.NDArray[np.float32], rate: int, cutoff_hz: float) -> float | None:
+    """Percent of frames (``rows``: per-frame linear power of the coarse top bands) with
+    content in the bands from TOP_GAP_HZ to TOP_GAP_HZ + TOP_SPAN_HZ above ``cutoff_hz``."""
+    if len(rows) == 0:
+        return None
+    res = rate / FFT_SIZE
+    start, width, count = _top_bins(rate)
+    lo_hz = cutoff_hz + TOP_GAP_HZ
+    hi_hz = min(cutoff_hz + TOP_GAP_HZ + TOP_SPAN_HZ, rate / 2 - TOP_GAP_HZ)
+    sel = [
+        i
+        for i in range(count)
+        if (start + i * width) * res >= lo_hz and (start + (i + 1) * width) * res <= hi_hz
+    ]
+    if not sel:
+        return None
+    db = 10 * np.log10(rows[:, sel].astype(np.float64).mean(axis=1) + _EPS)
+    floor = float(np.percentile(db, 10))
+    return round(float((db > floor + TOP_CONTENT_DB).mean()) * 100, 1)
 
 
 def analyse_spectrum(mean_db: Spectrum, rate: int) -> SpectrumResult:
@@ -185,6 +233,9 @@ class SpectrumAnalyzer:
     def _reset(self) -> None:
         self._counts = np.zeros(_N_BUCKETS, dtype=np.int64)
         self._sums = np.zeros((_N_BUCKETS, FFT_SIZE // 2 + 1), dtype=np.float64)
+        #: Per non-silent frame: its loudness bucket and coarse top-band powers.
+        self._top_buckets: list[npt.NDArray[np.int64]] = []
+        self._top_rows: list[npt.NDArray[np.float32]] = []
 
     def feed(self, block: Block, rate: int | None = None) -> None:
         """Add a block. Pass ``rate`` if the decoder's rate changed (chained Ogg)."""
@@ -208,13 +259,19 @@ class SpectrumAnalyzer:
         frames = data.reshape(count, FFT_SIZE, -1).astype(np.float64)
         level = 10 * np.log10(np.mean(frames**2, axis=(1, 2)) + _EPS)
         mag = np.abs(np.fft.rfft(frames * self._window[None, :, None], axis=1)) * self._scale
-        db = 10 * np.log10(np.mean(mag**2, axis=2) + _EPS)
-        for lv, spec in zip(level, db, strict=True):
-            if lv < LEVEL_MIN_DB:
-                continue
-            bucket = min(_N_BUCKETS - 1, int((lv - LEVEL_MIN_DB) / BUCKET_DB))
+        power = np.mean(mag**2, axis=2)
+        db = 10 * np.log10(power + _EPS)
+        audible = level >= LEVEL_MIN_DB
+        buckets = np.minimum(_N_BUCKETS - 1, ((level - LEVEL_MIN_DB) / BUCKET_DB).astype(np.int64))
+        for bucket, spec in zip(buckets[audible], db[audible], strict=True):
             self._counts[bucket] += 1
             self._sums[bucket] += spec
+        start, width, count = _top_bins(self._rate)
+        if count and audible.any():
+            top = power[audible, start : start + count * width]
+            rows = top.reshape(len(top), count, width).mean(axis=2).astype(np.float32)
+            self._top_rows.append(rows)
+            self._top_buckets.append(buckets[audible])
 
     def _flush(self) -> None:
         if not self._seen:
@@ -225,6 +282,7 @@ class SpectrumAnalyzer:
             count = len(pending) // FFT_SIZE
             self._transform(pending[: count * FFT_SIZE], count)
         counts, sums = self._counts, self._sums
+        top_rows, top_buckets = self._top_rows, self._top_buckets
         self._reset()
         total = int(counts.sum())
         result = SpectrumResult(rate=self._rate, frames=total, nyquist_hz=self._rate / 2)
@@ -239,6 +297,12 @@ class SpectrumAnalyzer:
                 mean = sums[first:].sum(axis=0) / loud
                 measured = analyse_spectrum(mean, self._rate)
                 measured.frames, measured.loud_frames = total, loud
+                if measured.has_cliff and top_rows:
+                    rows = np.concatenate(top_rows)
+                    is_loud = np.concatenate(top_buckets) >= first
+                    measured.top_band_share = top_band_share(
+                        rows[is_loud], self._rate, measured.cutoff_hz
+                    )
                 result = measured
         self._done.append(result)
 

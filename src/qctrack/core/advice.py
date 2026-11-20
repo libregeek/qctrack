@@ -12,7 +12,7 @@ import enum
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from qctrack.core.authenticity import Verdict
+from qctrack.core.authenticity import VBR_HIGH_KBPS, Protection, Verdict
 from qctrack.core.detect import Format
 from qctrack.core.factors import TrackMeasurements, mp3_claim
 from qctrack.core.mp3scan import Mp3Mode
@@ -84,7 +84,7 @@ def flags_for(m: TrackMeasurements, tags: TagInfo) -> tuple[str, ...]:
     if 1 in channels or any(c.fake_stereo for c in m.channels):
         out.append("mono_content")
     claim = mp3_claim(m)
-    if claim is not None and claim.protected:
+    if claim is not None and claim.protection is Protection.CONTENT_ABOVE:
         out.append("band_limited_source")
     if m.format is Format.MP3:
         encoder = (m.mp3.encoder or "") if m.mp3 else ""
@@ -114,11 +114,6 @@ def flags_for(m: TrackMeasurements, tags: TagInfo) -> tuple[str, ...]:
     return tuple(out)
 
 
-#: An MP3 VBR stream without a stored preset (FFmpeg writes none) counts as high quality
-#: from this stereo-equivalent average; LAME V0 averages about 220-260 kbps.
-VBR_HIGH_KBPS = 220.0
-
-
 def encode_is_high(m: TrackMeasurements, factors: dict[str, FactorResult]) -> bool:
     """True when the encode itself leaves little to gain: F1.01's High band, a V0-V2
     preset, or a VBR average from ``VBR_HIGH_KBPS`` (stereo-equivalent, so mono counts
@@ -145,6 +140,9 @@ def best_copy(m: TrackMeasurements, factors: Sequence[FactorResult], score: Trac
         return BestCopy.UNDETERMINED  # too little loud audio to measure a cutoff
     if "G4" in score.gates:
         return BestCopy.LOSSY_SOURCE
+    claim = mp3_claim(m)
+    if claim is not None and claim.protection is Protection.FADE:
+        return BestCopy.UNDETERMINED  # a dark source or a re-encode: cannot tell
     if not encode_is_high(m, f):
         return BestCopy.LOW_BITRATE
     return BestCopy.BEST
@@ -199,17 +197,27 @@ def advise(
         )
         return Advice(verdict, Action.CONSIDER_MASTER, f"mastering {o4:.0f}: {worst.detail}", flags)
     if verdict is BestCopy.UNDETERMINED:
-        why = (
-            "quick scan: run a full scan"
-            if m.decode_errors is None
-            else "too little loud audio to judge"
-        )
+        claim = mp3_claim(m)
+        cut = f.get("F3.01")
+        if m.decode_errors is None:
+            why = "quick scan: run a full scan"
+        elif claim is not None and claim.protection is Protection.FADE:
+            where = f" ({cut.detail})" if cut else ""
+            why = (
+                f"a wall with nothing above it{where}, but the content fades "
+                f"{claim.fade_db:.0f} dB before it: a dark source or a re-encode, cannot tell"
+            )
+        else:
+            why = "too little loud audio to judge"
         return Advice(verdict, Action.UNDETERMINED, why, flags)
     if "band_limited_source" in flags:
+        claim = mp3_claim(m)
+        share = claim.top_band_share if claim is not None else None
         return Advice(
             verdict,
             Action.KEEP_SOURCE_LIMITED,
-            "high frequencies fade before the encoder's wall: the source itself is band-limited",
+            f"high frequencies are faint, so the encoder coded them only in {share:g}% of "
+            "loud frames; not made from a lower-bitrate source",
             flags,
         )
     return Advice(verdict, Action.KEEP, "", flags)

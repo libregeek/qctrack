@@ -96,3 +96,25 @@ def test_flags() -> None:
 def test_action_priorities() -> None:
     assert [a.priority for a in Action] == list(range(1, 8))
     assert Action.REPLACE_DAMAGED.priority < Action.REPLACE_SOURCE.priority < Action.KEEP.priority
+
+
+def test_vbr_without_preset_judged_as_high_claim() -> None:
+    """A 242 kbps VBR file without a stored preset claims High (as LAME V0 would); content
+    stopping at 17 kHz is then two bands short. Content above the wall in some frames keeps
+    it genuine; with nothing above and no fade, it is a transcode."""
+    vbr = mp3(average_bitrate_kbps=242.0, lame=lame(0, encoder="Lavc62.28"), mode=Mp3Mode.VBR)
+    above = spectrum(17000.0)
+    above.top_band_share, above.fade_db = 28.0, 15.0
+    a = advice(vbr, spectrum=[above])
+    assert a.action is Action.KEEP_SOURCE_LIMITED and "28% of loud frames" in a.reason
+    hard = spectrum(17000.0)
+    hard.top_band_share, hard.fade_db = 0.0, 3.0
+    assert advice(vbr, spectrum=[hard]).action is Action.REPLACE_SOURCE
+
+
+def test_wall_after_a_fade_with_nothing_above_is_undetermined() -> None:
+    faded = spectrum(16200.0)
+    faded.top_band_share, faded.fade_db = 0.5, 20.0
+    a = advice(mp3(), spectrum=[faded])
+    assert a.best_copy is BestCopy.UNDETERMINED and a.action is Action.UNDETERMINED
+    assert "a dark source or a re-encode, cannot tell" in a.reason

@@ -39,8 +39,9 @@ Block = npt.NDArray[np.float32]
 
 #: Raise this whenever a change to pass 1 or 2 (or to the measurement types) would give a
 #: different result for the same file, so cached measurements are not reused (REQ-NFR-15).
-ANALYSER_VERSION = 4  # 2: Measured ``size``; 3: SpectrumResult ``fade_db``; 4: OggStream
-# ``header_bytes`` and zero padding before the first MP3 frame counted as padding
+ANALYSER_VERSION = 5  # 2: Measured ``size``; 3: SpectrumResult ``fade_db``; 4: OggStream
+# ``header_bytes`` and zero padding before the first MP3 frame counted as padding;
+# 5: SpectrumResult ``top_band_share``
 
 
 @dataclass

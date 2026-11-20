@@ -545,3 +545,19 @@ Consequences for the protection rules (C2):
 | 5 | F1.05 recognises `Lavc`/`Lavf` as LAME and treats unknown as Info; mono and mono-in-stereo become flags | H4, H6 |
 | 6 | Clipping by flat-top detection; dynamics by peak-to-loudness ratio with a minimum duration (part of O4) | N4, H7 |
 | 7 | Skeleton streams accepted; container magic numbers checked before the MPEG search; zero padding not counted as junk; Vorbis bitrate excludes header packets | N5, C8, H3, C7 |
+
+### 11.4 Real samples and the peak-hold measure
+
+Nov 20, 2026 · `qctrack scan ~/Lab/samples` (14 files, read-only, with the owner's permission).
+
+The fade threshold from 7.2 (12 dB) turned out too lenient on real music: genuine 320 kbps files fade 29–35 dB toward 20 kHz, and the fades at 16 kHz walls spread from 4 to 20 dB, so fade alone cannot separate a dark source from a transcode. A per-frame measure can: a file made from a lower-bitrate source has nothing above that source's lowpass in any frame, while LAME's sfb21 cut works frame by frame.
+
+| File | Claims | Wall | Fade | Content above the wall | Outcome |
+| --- | --- | --- | --- | --- | --- |
+| sample.mp3 | 320 kbps | 16.3 kHz | 12.6 dB | 6.5% of loud frames | Keep: source-limited |
+| Dooreyaanu Keralam | 320 kbps | 16.2 kHz | 17.0 dB | 2.7% (borderline) | Keep: source-limited |
+| Bajagovindam | 242 kbps VBR | 17.0 kHz | 14.8 dB | 28.4% | Keep: source-limited |
+| Adimarunge | 192 kbps | 16.15 kHz | 20.2 dB | 0.4% | Undetermined |
+| Synthetic transcodes (96-128 kbps, V5, Vorbis q2) | 320 kbps | 15.5-16.9 kHz | 2-23 dB | 0-0.4% | G4, or Undetermined when faded |
+
+These labels are evidence-based but not proof: a transcode of a VBR source, which also codes the top band only in some frames, would look like the files above. Labelled files (T10) remain the way to settle the thresholds.
