@@ -1,13 +1,13 @@
 # qctrack
 
-qctrack gives every audio track a quality score from 0 to 100 and a rating from A to F. It does this without playing the track. It detects fake-bitrate files (low-quality sources re-encoded to a higher bitrate), explains every score, and writes the results as a self-contained HTML report, a CSV file and a JSON file.
+qctrack gives every audio track a quality score from 0 to 100 and a rating from A to F, and tells you whether a better copy is worth looking for. It does this without playing the track. It detects fake-bitrate files (low-quality sources re-encoded to a higher bitrate), ranks copies of the same track, explains every result, and writes a self-contained HTML report, a CSV file and a JSON file.
 
 - **Formats (current release):** MP3 and Ogg Vorbis. FLAC and Opus are detected and reported as "Supported in a later release".
 - **Platform:** Linux (x86-64 and aarch64).
 - **Safe by design:** your files are opened read-only and are never modified, played or uploaded. qctrack uses no network and sends no telemetry.
 - **License:** GPLv3 (see [LICENSE](LICENSE)).
 
-> **Status:** the project is in the design stage and the source code is not available yet, so the steps below describe the planned build. See [spec/requirements.md](spec/requirements.md) and [spec/architecture.md](spec/architecture.md).
+> **Status:** version 0.1.0, phase 1 under active development; no release has been published yet. Run it from the source folder (below). The default scoring weights are proposals still awaiting approval, and the thresholds are being tuned against labelled files, so scores may shift between versions. Progress is tracked in [todo.md](todo.md); the design is in [spec/requirements.md](spec/requirements.md) and [spec/architecture.md](spec/architecture.md).
 
 ## Get the source
 
@@ -67,10 +67,21 @@ When running from the source folder without installing, use `PYTHONPATH=src pyth
 | `--color auto\|always\|never` | Colour the output. The default `auto` colours a terminal and stays plain when piped or when `NO_COLOR` is set. |
 | `--follow-links` | Follow symbolic links to folders (off by default). |
 | `--fail-below SCORE` | Exit with code 4 if any track scores below `SCORE`. Useful in scripts. |
+| `--duplicates` | (`scan`, `rescore`) Group copies of the same track (same artist and title tags, durations within 2 s) and rank each group. |
+| `--no-cache` | Analyse every file again instead of reusing cached results. |
 
-Run `qctrack --help` or `qctrack scan --help` for the full list. Existing report files with the same name are overwritten without asking.
+`compare` takes the same report and profile options plus `-j`, `--timeout` and `--no-cache`. Run `qctrack --help`, `qctrack scan --help` or `man ./man/qctrack.1` for the full list. Results are cached in `~/.local/share/qctrack/cache.db`, never next to your music, so a second scan of the same files is fast. Existing report files with the same name are overwritten without asking.
 
 ## Understanding the results
+
+The score is a weighted average of four objectives (default weights in brackets):
+
+- **Metadata & encoding (25):** bitrate, encoder, quality setting, sample rate. A mono file is judged as stereo at twice its bitrate.
+- **Technical integrity (25):** stream structure, truncation, decode errors, channel problems.
+- **Bandwidth & authenticity (30):** how high the audible content actually reaches.
+- **Mastering (20):** clipping, true peak, loudness and how hard the master is limited (peak-to-loudness ratio).
+
+Real damage (a broken or truncated stream) caps the score at 39. A suspected fake (content that stops well below what the bitrate claims) does not lower the score by itself, because the file sounds like its source; it shows up in the action instead.
 
 | Rating | Score | Meaning |
 | --- | --- | --- |
@@ -100,7 +111,11 @@ The score and rating answer "how good does this file sound?". A separate **actio
 | Keep: source-limited | High frequencies are faint in the recording itself | Nothing; a better copy is unlikely |
 | Keep | Nothing to improve | Nothing |
 
-Re-encoding a file you already have to a higher bitrate never helps: lost detail cannot be restored, and the result is a transcode. `-v` and the reports show the reason for each action.
+Re-encoding a file you already have to a higher bitrate never helps: lost detail cannot be restored, and the result is a transcode. `-v` and the reports show the reason for each action, and a best-copy verdict (Best available likely, Low-bitrate encode, Lossy or band-limited source, Undetermined).
+
+Flags note things that never change the score, for example `mono_content`, `short_track`, `low_sample_rate`, `unknown_encoder`, `cover_art_large` or `different_masters`. They appear in the `flags` column of the CSV and in the HTML details.
+
+`compare` and `--duplicates` rank copies by integrity first, then authenticity, then how high the content reaches and the bitrate, then mastering. Differences too small to matter (under 1 kHz of bandwidth or 10 mastering points) count as equal, and the result says "Equivalent". It also warns when the copies look like different masters or different tracks.
 
 ### Before you discard a track
 
@@ -131,6 +146,8 @@ qctrack scan ~/Music --profile my-weights.toml --html
 
 Save the file as `~/.config/qctrack/profile.toml` to use it automatically.
 
+Two common changes: set `O4 = 0` under `[objectives]` to leave mastering out of the score, and adjust the `[advice]` table to change when "Consider another master" applies and how far apart copies must be before `compare` prefers one.
+
 You can also re-score a finished scan with a different profile without analysing the audio again:
 
 ```bash
@@ -143,7 +160,7 @@ qctrack rescore --profile my-weights.toml --html --csv    # reads report.json
 | --- | --- |
 | 0 | All files were analysed. |
 | 1 | Some files were Error or Unsupported. |
-| 2 | Usage or profile error. |
+| 2 | Usage or profile error (including `compare` with fewer than two files). |
 | 3 | Fatal error, such as an unwritable output folder. |
 | 4 | A track scored below `--fail-below`. This takes precedence over code 1. |
 
@@ -164,7 +181,7 @@ mypy --strict src                     # type checks
 ruff check . && ruff format --check src tests   # lint and formatting
 ```
 
-Test audio is not stored in the repository. Real-file tests read from a folder of your own samples, and generated fixtures live in `tests/fixtures`. Progress is tracked in [todo.md](todo.md).
+Test audio is not stored in the repository. Tests generate the files they need with FFmpeg, and a few real-file tests read from a folder of your own samples (`QCTRACK_SAMPLES`, default `~/Lab/samples`) and are skipped when it is missing. `tests/fp_cases.py` holds a false-positive regression corpus; `python3 tools/accuracy/fp_corpus.py OUT_DIR` writes those files and prints how each one scores. Progress is tracked in [todo.md](todo.md).
 
 ## Contributing
 
