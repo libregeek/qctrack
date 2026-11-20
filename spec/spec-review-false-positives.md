@@ -560,4 +560,13 @@ The fade threshold from 7.2 (12 dB) turned out too lenient on real music: genuin
 | Adimarunge | 192 kbps | 16.15 kHz | 20.2 dB | 0.4% | Undetermined |
 | Synthetic transcodes (96-128 kbps, V5, Vorbis q2) | 320 kbps | 15.5-16.9 kHz | 2-23 dB | 0-0.4% | G4, or Undetermined when faded |
 
+Two files of known origin, added later:
+
+| File | Known origin | Claims | Wall | Fade | Content above | Outcome | Correct? |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Madhuram-acdrip.mp3 | The owner's own CD rip, LAME 3.100 320 kbps CBR | 320 kbps | 20.3 kHz (the encoder's own lowpass, 20.5 kHz) | — | — | 99.2 A, Keep | Yes |
+| Himabinduvayi-audacity.mp3 | A mono analog film track taken from YouTube (about 128 kbps), re-encoded in Audacity to 256 kbps MP3 at 48 kHz | 256 kbps | 16.05 kHz (YouTube's AAC lowpass) | 15.5 dB | 0.3% | 82.5 B, Undetermined | Yes, as far as the file allows: a transcode, but the film's content ends near 8-10 kHz (about 70 dB below the music by 16 kHz), so nothing in the file separates it from a genuinely dark source |
+
+The second file argues against an "inaudible wall" rule (treating a wall far below the music as source-limited): it would have labelled this transcode "Keep: source-limited" and hidden that a better source (a soundtrack release or lossless transfer, free of two lossy generations) may exist. The Undetermined reason now says so. A synthetic copy of the chain (dark source, AAC 128 kbps with a 16 kHz lowpass, MP3 256 kbps at 48 kHz) is in the regression corpus.
+
 These labels are evidence-based but not proof: a transcode of a VBR source, which also codes the top band only in some frames, would look like the files above. Labelled files (T10) remain the way to settle the thresholds.

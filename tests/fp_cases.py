@@ -90,6 +90,16 @@ def _transcode(first: Callable[[Path, Path], None], suffix: str) -> Callable[[Pa
     return build
 
 
+def _youtube_chain(work: Path, out: Path) -> None:
+    """A dark mono source (an old film track) as a video site serves it, AAC at 128 kbps
+    with a 16 kHz lowpass, then re-encoded to 256 kbps MP3 at 48 kHz: a transcode whose
+    source had faded long before the wall, so the file cannot show which it is."""
+    tmp = work / f"{out.stem}_aac.m4a"
+    _encode(source(work, extra=_dark(8000)), tmp, "-c:a", "aac", "-b:a", "128k",
+            "-cutoff", "16000", "-ac", "1")  # fmt: skip
+    _encode(tmp, out, "-c:a", "libmp3lame", "-b:a", "256k", "-ar", "48000", "-ac", "2")
+
+
 def _derived(
     base: Callable[[Path, Path], None], suffix: str, change: Callable[[bytes], bytes]
 ) -> Callable[[Path, Path], None]:
@@ -187,6 +197,9 @@ CASES: tuple[Case, ...] = (
     Case("transcode_vorbis_q2_to_320.mp3", "N1",
          Expect(NOT_POOR, ("G4",), action="Replace: lossy source"),
          _transcode(_vorbis("2"), ".ogg")),
+    # A transcode of a dark source (like Himabinduvayi, review 11.4): never G4, never Keep.
+    Case("dark_film_from_video_site_256.mp3", "11.4",
+         Expect(GOOD, action="Undetermined"), _youtube_chain),
     # Other formats named .mp3: never scored as broken MP3.
     Case("aac_in_mp4_named.mp3", "C8", Expect(None, ("G1",), "Unsupported"),
          _renamed("-c:a", "aac", "-b:a", "128k", suffix=".m4a")),

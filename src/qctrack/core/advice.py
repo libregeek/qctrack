@@ -205,7 +205,8 @@ def advise(
             where = f" ({cut.detail})" if cut else ""
             why = (
                 f"a wall with nothing above it{where}, but the content fades "
-                f"{claim.fade_db:.0f} dB before it: a dark source or a re-encode, cannot tell"
+                f"{claim.fade_db:.0f} dB before it: a dark source or a re-encode, cannot "
+                "tell; if it came from a streaming or video site, a better source may exist"
             )
         else:
             why = "too little loud audio to judge"
