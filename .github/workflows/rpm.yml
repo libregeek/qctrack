@@ -1,11 +1,9 @@
 name: RPM
 
+# Builds only for a release tag (v1.2.3), not for every push.
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-  pull_request:
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,6 +29,8 @@ jobs:
           py=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           spec=$(rpmspec -q --qf '%{version}\n' qctrack.spec | head -1)
           test "$py" = "$spec" || { echo "pyproject $py, spec $spec"; exit 1; }
+          tag="${GITHUB_REF_NAME#v}"
+          test "$tag" = "$spec" || { echo "tag v$tag, spec $spec"; exit 1; }
 
       - name: Source tarball
         run: |
