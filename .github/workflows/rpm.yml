@@ -40,8 +40,22 @@ jobs:
           git archive --prefix="qctrack-$v/" -o ~/rpmbuild/SOURCES/"qctrack-$v.tar.gz" HEAD
           cp qctrack.spec ~/rpmbuild/SPECS/
 
+      # The spec generates part of its BuildRequires (%generate_buildrequires: the
+      # pyproject.toml dependencies), which `dnf builddep` on the spec file cannot see.
+      # `rpmbuild -br` writes them into a buildreqs.nosrc.rpm and exits 11 while any are
+      # missing; install them and repeat until it exits 0.
       - name: Build dependencies
-        run: dnf builddep -y ~/rpmbuild/SPECS/qctrack.spec
+        run: |
+          dnf builddep -y ~/rpmbuild/SPECS/qctrack.spec
+          for i in 1 2 3 4 5; do
+            rc=0
+            rpmbuild -br ~/rpmbuild/SPECS/qctrack.spec || rc=$?
+            if [ "$rc" -eq 0 ]; then rm -f ~/rpmbuild/SRPMS/*.nosrc.rpm; exit 0; fi
+            [ "$rc" -eq 11 ] || exit "$rc"
+            dnf builddep -y ~/rpmbuild/SRPMS/qctrack-*.buildreqs.nosrc.rpm
+            rm -f ~/rpmbuild/SRPMS/*.nosrc.rpm
+          done
+          echo "build dependencies still missing after 5 rounds"; exit 1
 
       - name: Build
         run: rpmbuild -ba ~/rpmbuild/SPECS/qctrack.spec
