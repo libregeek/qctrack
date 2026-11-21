@@ -238,7 +238,7 @@ Weights are relative points within each objective; they are renormalised over th
 | F2.01 Stream structure validity | O2 | 20 | Numeric + gate |
 | F2.02 Truncation | O2 | 15 | Categorical + gate |
 | F2.06 Decode errors | O2 | 15 | Numeric |
-| F2.04 Embedded audio checksum | O2 | 10 | Categorical + gate (FLAC) |
+| F2.04 Embedded audio checksum | O2 | 10 | Categorical + gate (FLAC); MP3 mismatch is Info, weight 0, with a flag |
 | F2.05 Block-level CRC | O2 | 10 | Numeric |
 | F2.12 Channel anomalies | O2 | 6 | Categorical |
 | F2.03 Unidentified data | O2 | 5 | Numeric |
@@ -562,7 +562,7 @@ All drafting and approval tasks (T01–T09, T13–T16) are done and the baseline
 | T17 | Approve the dual-result model: O4 and the objective weights, best-copy verdict, replacement actions, copy ranking, duplicate grouping and flags (sections 4.5, 5.2–5.4, 5.7–5.11) | Product owner | T06 | Not started |
 | T18 | Add the false-positive cases from `spec-review-false-positives.md` (R5) to the T10 corpus, plus copy pairs for `compare`: genuine vs transcode, original vs remaster | Team | T10 | Not started |
 
-T10–T12 can run in parallel with architecture work, since they tune values rather than structure. T17 and T18 were added on Nov 20, 2026 after the false-positive review (`spec-review-false-positives.md`).
+T10–T12 can run in parallel with architecture work, since they tune values rather than structure. What the corpus for T10, T11 and T18 must contain and how it is labelled is in `test-corpus.md`. T17 and T18 were added on Nov 20, 2026 after the false-positive review (`spec-review-false-positives.md`).
 
 ## 10. Open questions
 

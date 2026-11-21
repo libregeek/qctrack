@@ -205,3 +205,23 @@ def test_real_file_flipped_bit_and_cut(tmp_path: Path) -> None:
     assert r.crc_failures == 1 and r.lost_pages == 1
     r = scan_ogg(write(tmp_path, bytes(data[: len(data) - 1000])))
     assert r.truncated and r.crc_failures == 1
+
+
+def test_start_granule() -> None:
+    """A stream from mid-broadcast starts at a high granule; its length counts from there.
+    A stream encoded from the start is not shortened (finding M3)."""
+    from qctrack.core.detect import Format
+    from qctrack.core.oggscan import OggStream, VorbisHeader
+
+    hdr = VorbisHeader(0, 2, 44100, 0, 128000, 0)
+
+    def stream(g1: int, g2: int, last: int) -> OggStream:
+        return OggStream(1, 0, Format.VORBIS, 0, vorbis=hdr, last_granule=last,
+                         first_audio_granule=g1, second_audio_granule=g2)  # fmt: skip
+
+    normal = stream(20_000, 39_000, 441_000)  # first page slightly more than the next
+    assert normal.start_granule == 0 and normal.duration_s == 10.0
+    mid = stream(495_296, 515_000, 882_000)
+    assert mid.start_granule == 495_296 - 19_704
+    assert mid.duration_s == (882_000 - 475_592) / 44100
+    assert stream(20_000, 0, 441_000).start_granule == 0  # one audio page only

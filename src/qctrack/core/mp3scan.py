@@ -153,11 +153,21 @@ class Mp3Scan:
     truncated_bytes: int = 0
     #: Known metadata: leading and trailing tag bytes, by kind.
     metadata_bytes: Counter[str] = field(default_factory=Counter)
+    #: Layer III ``main_data_begin`` of the first audio frame: how many bytes of earlier
+    #: frames (the bit reservoir) it needs. Above 0 only in a file cut at its start, since
+    #: an encoder's first frame has no earlier data (finding H8). None when not Layer III.
+    first_main_data_begin: int | None = None
 
     @property
     def truncated(self) -> bool:
         """The file ends inside its last frame."""
         return self.truncated_bytes > 0
+
+    @property
+    def cut_at_start(self) -> bool:
+        """The first audio frame refers to data before it, so frames were removed from the
+        start of the file (a lossless split), not from its end."""
+        return bool(self.first_main_data_begin)
 
     @property
     def missing_frames(self) -> int | None:
@@ -326,6 +336,16 @@ def _side_info_size(version: int, mono: bool) -> int:
     if version == 1:
         return 17 if mono else 32
     return 9 if mono else 17
+
+
+def _main_data_begin(buf: mmap.mmap | bytes, pos: int, version: int, end: int) -> int:
+    """The Layer III side information's first field: 9 bits in MPEG-1, 8 in MPEG-2/2.5."""
+    off = pos + 4 + (0 if buf[pos + 1] & 1 else 2)  # protection bit 0: a 16-bit CRC follows
+    if off + 2 > end:
+        return 0
+    if version == 1:
+        return (buf[off] << 1) | (buf[off + 1] >> 7)
+    return buf[off]
 
 
 def _parse_tag_frame(
@@ -528,6 +548,8 @@ def _scan(buf: mmap.mmap | bytes, size: int, lead: int) -> Mp3Scan:
                 tag_frame_bytes = length
                 pos += length
                 continue
+        if r.first_main_data_begin is None and layer == 3:
+            r.first_main_data_begin = _main_data_begin(buf, pos, version, audio_end)
         r.channel_modes_seen.add(_CHANNEL_MODES[buf[pos + 3] >> 6])
         r.sample_rates_seen.add(rate)
         if pos + length > audio_end:

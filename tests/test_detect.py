@@ -168,3 +168,15 @@ def test_cli_renamed_copy(tmp_path: Path) -> None:
     # Detected as MP3 by content, so it is analysed (provisional, being a quick scan).
     assert "unsupported 0, errors 0" in out.stdout
     assert "provisional 1" in out.stdout
+
+
+def test_only_planned_formats_are_promised_for_a_later_release() -> None:
+    """REQ-FMT-02 promises Opus, FLAC and Speex; WAV, MP4 or an unknown format is just
+    Unsupported, never "supported in a later release" (review finding L5)."""
+    from qctrack.cli.main import describe
+    from qctrack.core.detect import Detection, Format
+
+    assert describe(Detection(Format.FLAC)) == "Unsupported (FLAC; supported in a later release)"
+    assert describe(Detection(Format.WAV)) == "Unsupported (WAV)"
+    assert describe(Detection(Format.UNKNOWN)) == "Unsupported (unknown format)"
+    assert describe(Detection(Format.MP3)) == "MP3"

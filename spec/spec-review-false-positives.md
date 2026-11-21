@@ -472,7 +472,7 @@ The two results (9.2), O4 (9.3) and the flags (9.4) are in requirements sections
 | R3 | Resolved in part (9.1): risky cases are flagged; score effect proposed in 9.4 | |
 | R6 | Structure approved and written into `requirements.md` (9.5); weights and thresholds tracked as T17 | |
 | R4 | Resolved (Nov 21, 2026): no `speech` profile is required | M8 |
-| R5 | Can the T10 corpus include old analog-sourced recordings, mono reissues, non-LAME encodes (iTunes, FhG), 32 kHz files, mp3gain-adjusted files and files with large cover art? | These are the false-positive cases above; without them, tuning will not catch them. |
+| R5 | Deferred (Nov 21, 2026): the origin of most files at hand is unknown, so they cannot be labelled reliably. The owner will collect samples of known origin later (analog-sourced recordings, mono reissues, non-LAME encodes, 32 kHz files, mp3gain-adjusted files, large cover art); files of unknown origin are labelled `unknown`, never guessed. Until then, the synthetic cases in `tests/fp_cases.py` stand in. Sample types and labelling: `test-corpus.md`. | These are the false-positive cases above; without them, tuning will not catch them. |
 
 ## 11. Code cross-check results
 

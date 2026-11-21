@@ -26,7 +26,7 @@ from qctrack.cli.workers import DEFAULT_MEMORY_MB, DEFAULT_TIMEOUT_S, WorkerPool
 from qctrack.core.analyze import Measured, TrackReport, score_measured
 from qctrack.core.cache import CacheError, ResultCache, file_key
 from qctrack.core.copies import CopyGroup, apply_groups, find_duplicates, rank
-from qctrack.core.detect import Detection
+from qctrack.core.detect import Detection, Format
 from qctrack.core.mp3scan import Mp3Scan
 from qctrack.core.oggscan import OggScan
 from qctrack.core.profile import (
@@ -177,8 +177,12 @@ def describe(d: Detection) -> str:
         return d.format.value
     if d.ogg_streams and d.format.supported:
         names = ", ".join(s.value for s in d.ogg_streams)
-        return f"Unsupported (multiplexed Ogg: {names}; supported in a later release)"
-    return f"Unsupported ({d.format.value}; supported in a later release)"
+        return f"Unsupported (multiplexed Ogg: {names})"
+    if d.format is Format.UNKNOWN:
+        return "Unsupported (unknown format)"
+    if d.format.later:
+        return f"Unsupported ({d.format.value}; supported in a later release)"
+    return f"Unsupported ({d.format.value})"
 
 
 def _mp3_lines(r: Mp3Scan) -> list[str]:

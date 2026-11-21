@@ -123,7 +123,7 @@ Low sample rates cap available bandwidth.
 - **Priority:** MVP
 - **Reference:** mediainfo
 - **Method:** Read version and sample rate from the codec header; check consistency across the stream.
-- **Thresholds:** Pass: 44.1 / 48 kHz; Warn: 32 kHz; Poor: ≤ 24 kHz
+- **Thresholds:** Pass: ≥ 44.1 kHz; Warn: 25–44.1 kHz (e.g. 32 kHz); Poor: ≤ 24 kHz. Rates above 48 kHz pass: they add nothing for a lossy codec but are not a defect (finding M8).
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |
@@ -263,7 +263,7 @@ Files are often renamed; .ogg can hold Vorbis, Opus, FLAC or Speex.
 - **Priority:** MVP
 - **Reference:** file, ffprobe
 - **Method:** Sniff magic bytes and the first codec packet; ignore the extension.
-- **Thresholds:** Pass: Matches a supported codec; Warn: Supported in a later release; Fail: Unknown or mismatched
+- **Thresholds:** Pass: Matches a supported codec. Any other format, known or not, is reported as Unsupported (gate G1) and never scored, so this factor has no Warn or Fail. The file extension is never used (REQ-FMT-04; finding L5).
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |
@@ -333,8 +333,8 @@ Incomplete downloads or cut files.
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |
-| MP3 | Applies | Last frame complete; frames counted against the Xing/Info/VBRI frame count. | Fail: declared frames missing for more than max(1 s, 1% of the declared length); Warn: last frame cut short (at most one frame, 26 ms at 44.1 kHz) or a smaller shortfall. Without a declared count a large loss cannot be measured, so a cut-short frame stays a Warn. |
-| Ogg Vorbis | Applies | Final page complete; end-of-stream flag on the last stream. | Fail: final page cut off and the stream never ends; Warn: a cut-off page after a stream that ended; Pass (noted): complete final page without the end-of-stream flag, which some encoders and stream recorders never set. |
+| MP3 | Applies | Last frame complete; frames counted against the Xing/Info/VBRI frame count. | Fail: declared frames missing for more than max(1 s, 1% of the declared length); Warn: last frame cut short (at most one frame, 26 ms at 44.1 kHz) or a smaller shortfall. Without a declared count a large loss cannot be measured, so a cut-short frame stays a Warn. A file cut at its start (a lossless split) whose header still counts the removed frames is a Warn, not a Fail: its first frame's `main_data_begin` points into a bit reservoir before the file, which an encoder's first frame never does, and its last frame is complete. F1.08 still reports the stale length (finding H8). |
+| Ogg Vorbis | Applies | Final page complete; end-of-stream flag on the last stream. The length counts from the stream's first granule, so a recording that starts mid-broadcast (a high first granule) is neither too long nor too low in bitrate (finding M3). | Fail: final page cut off and the stream never ends; Warn: a cut-off page after a stream that ended; Pass (noted): complete final page without the end-of-stream flag, which some encoders and stream recorders never set. |
 | FLAC | Applies | Final frame complete; decoded total matches STREAMINFO. | — |
 | Opus | Applies | Final page complete and carries the end-of-stream flag. | — |
 
@@ -369,11 +369,11 @@ Proves audio is unchanged since encoding.
 - **Priority:** v1
 - **Reference:** mp3guessenc, flac -t
 - **Method:** Recompute the checksum the encoder stored and compare.
-- **Thresholds:** Pass: Match; Fail: Mismatch; Info: No checksum stored
+- **Thresholds:** Pass: Match; Fail: Mismatch (FLAC only, gate G3); Info: No checksum stored. For MP3 a mismatch is Info and scores nothing (finding H2).
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |
-| MP3 | Applies | CRC-16 over audio frames vs music CRC in the LAME tag. | — |
+| MP3 | Applies | CRC-16 over audio frames vs music CRC in the LAME tag. | Pass: Match; Info: Mismatch, weight 0, flag `gain_adjusted` when mp3gain APE tags (`MP3GAIN_UNDO`, `MP3GAIN_MINMAX`) are present, else `modified_since_encoding`. mp3gain and lossless trimming break the CRC without touching the sound. |
 | Ogg Vorbis | Not applicable | Format stores no whole-stream checksum. |  |
 | FLAC | Applies | MD5 of decoded audio vs STREAMINFO signature. The strongest integrity check available. Input: Decoded PCM. | Pass: MD5 match; Fail: MD5 mismatch; Info: MD5 not set (all zeros) |
 | Opus | Not applicable | Format stores no whole-stream checksum. |  |
@@ -469,7 +469,7 @@ Over-compression and level consistency.
 - **Priority:** MVP
 - **Reference:** libebur128, rsgain
 - **Method:** EBU R128 / ITU-R BS.1770 gated loudness.
-- **Thresholds:** Pass: −20 to −9 LUFS; Warn: > −9 LUFS (heavily limited); Info: < −20 LUFS (quiet)
+- **Thresholds:** Scored only at the loud extreme, on the profile curve: −9 LUFS or quieter scores 100, −7 LUFS 50, −5 LUFS or louder 0 (heavily limited). Quiet files are not penalised; silence is left out (finding L2).
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |
@@ -595,7 +595,7 @@ Real audio bandwidth, the main evidence of source quality.
 - **Priority:** MVP
 - **Reference:** Spek, fakeflac-go
 - **Method:** Hann-windowed 4096-pt FFT, average magnitude (dB) over loud frames; scan down from Nyquist for a sustained energy rise.
-- **Thresholds:** Pass: ≥ 19.5 kHz; Warn: 17–19.5 kHz; Poor: ≤ 16.5 kHz
+- **Thresholds:** Pass: ≥ 19.5 kHz; Warn: 16.5–19.5 kHz; Poor: < 16.5 kHz. Scored on the profile curve (12 kHz 0, 16.5 kHz 50, 19.5 kHz 100), so the bands are labels for that curve (finding L4).
 
 | Format | Applies | Format-specific method | Format-specific thresholds |
 | --- | --- | --- | --- |

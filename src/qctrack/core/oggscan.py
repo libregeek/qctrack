@@ -53,17 +53,37 @@ class OggStream:
     #: packets, which can hold megabytes of cover art (C7).
     header_bytes: int = 0
     audio_started: bool = False
+    #: Granule positions of the first two audio pages that finish a packet. A stream
+    #: recorded from mid-broadcast starts at a high granule, not at 0 (finding M3).
+    first_audio_granule: int | None = None
+    second_audio_granule: int | None = None
     vorbis: VorbisHeader | None = None
     #: Vendor string from the Vorbis comment header, if it was found.
     vendor: str | None = None
     _awaiting_comment: bool = field(default=False, repr=False)
 
     @property
+    def start_granule(self) -> int:
+        """Estimated granule position at which the audio starts: 0 for a stream encoded from
+        the beginning, higher for one recorded from mid-broadcast (finding M3).
+
+        The first audio page's granule counts the samples up to the end of that page. When it
+        is clearly more than one page's worth (more than twice the step to the next page),
+        the stream did not start at 0, and the start is that granule minus one page's step.
+        The estimate can be off by the difference between two pages' sample counts, a small
+        fraction of a second. Without two audio pages nothing is subtracted."""
+        g1, g2 = self.first_audio_granule, self.second_audio_granule
+        if g1 is None or g2 is None or g2 <= g1:
+            return 0
+        step = g2 - g1
+        return g1 - step if g1 > 2 * step else 0
+
+    @property
     def duration_s(self) -> float | None:
-        """Length from the last granule position (Vorbis only)."""
+        """Length from the granule positions (Vorbis only)."""
         if self.vorbis is None or self.vorbis.rate <= 0 or self.last_granule is None:
             return None
-        return max(self.last_granule, 0) / self.vorbis.rate
+        return max(self.last_granule - self.start_granule, 0) / self.vorbis.rate
 
 
 @dataclass
@@ -255,6 +275,11 @@ def _update(s: OggStream, flags: int, granule: int, pageno: int, length: int, r:
         r.granule_backwards += 1
     if s.first_granule is None:
         s.first_granule = granule
+    if granule > 0:
+        if s.first_audio_granule is None:
+            s.first_audio_granule = granule
+        elif s.second_audio_granule is None:
+            s.second_audio_granule = granule
     s.last_granule = granule
 
 

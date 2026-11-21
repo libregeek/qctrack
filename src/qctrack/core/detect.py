@@ -41,6 +41,11 @@ class Format(enum.Enum):
         """True when this release fully analyses the format (REQ-FMT-01)."""
         return self in (Format.MP3, Format.VORBIS)
 
+    @property
+    def later(self) -> bool:
+        """True for formats reported as "supported in a later release" (REQ-FMT-02)."""
+        return self in (Format.OPUS, Format.FLAC, Format.SPEEX)
+
 
 @dataclass(frozen=True)
 class Detection:

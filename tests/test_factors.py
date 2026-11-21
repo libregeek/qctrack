@@ -101,6 +101,21 @@ def test_truncated_mp3_gets_g2() -> None:
     assert (s.gates, s.rating, s.final_score) == (("G2",), "F", 39.0)
 
 
+def test_file_cut_at_its_start_is_not_truncated() -> None:
+    """A raw split keeps the old Xing header, so frames are declared but missing; the first
+    frame's reservoir pointer shows they went from the start, and the end is intact (H8)."""
+    results = run(mp3(first_main_data_begin=480, **declared(2000)))
+    assert results["F2.02"].verdict is Verdict.WARN
+    assert "cut at its start" in results["F2.02"].detail
+    assert "G2" not in score_track(results.values(), P).gates
+    # Cut at the start and also cut off inside its last frame: still truncation.
+    results = run(mp3(first_main_data_begin=480, truncated_bytes=500, **declared(2000)))
+    assert results["F2.02"].verdict is Verdict.FAIL
+    # Missing frames from a file that starts with a self-contained frame: truncation.
+    results = run(mp3(first_main_data_begin=0, **declared(2000)))
+    assert results["F2.02"].verdict is Verdict.FAIL
+
+
 def test_cut_short_last_frame_is_a_warn_without_gate() -> None:
     # The file ends inside its last frame, which the declared count includes (C6).
     for kw in ({}, declared(1000)):
@@ -197,6 +212,8 @@ def test_sample_rate_channels_and_length() -> None:
     assert run(mp3(sample_rate=32000))["F1.03"].verdict is Verdict.WARN
     assert run(mp3(sample_rate=22050))["F1.03"].verdict is Verdict.FAIL
     assert run(mp3(sample_rates_seen={44100, 48000}))["F1.03"].verdict is Verdict.WARN
+    # rates above 48 kHz are not a defect (review finding M8)
+    assert run(mp3(sample_rate=48000, sample_rates_seen={48000}))["F1.03"].verdict is Verdict.PASS
     assert run(mp3(channel_mode="Mono"))["F1.04"].verdict is Verdict.PASS  # a flag (H6)
     assert run(mp3(length_mismatch=0.0))["F1.08"].verdict is Verdict.PASS
     assert run(mp3(length_mismatch=0.004))["F1.08"].verdict is Verdict.WARN
@@ -349,3 +366,11 @@ def test_vorbis_end_of_stream_flag() -> None:
 def test_unsupported_format_is_rejected() -> None:
     with pytest.raises(ValueError, match="cannot score"):
         factor_results(TrackMeasurements(Format.FLAC), P)
+
+
+def test_high_sample_rate_vorbis_passes_f103() -> None:
+    """A 96 kHz Vorbis file is not marked down for its rate (review finding M8)."""
+    scan = vorbis()
+    assert scan.streams[0].vorbis is not None
+    scan.streams[0].vorbis.rate = 96000
+    assert run_ogg(scan)["F1.03"].verdict is Verdict.PASS

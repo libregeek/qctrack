@@ -148,6 +148,55 @@ def pad_after_id3(mp3: bytes, n: int = 4096) -> bytes:
     return mp3[:end] + bytes(n) + mp3[end:]
 
 
+_BITRATES = (0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+
+
+def drop_frames_after_xing(mp3: bytes, n: int = 200) -> bytes:
+    """Remove ``n`` audio frames from the start of an MPEG-1 Layer III file at a frame
+    boundary and keep its Xing/Info frame unchanged, as a raw lossless split does: the
+    header still counts the removed frames, and the new first frame needs reservoir data
+    that is gone (finding H8)."""
+    pos = 0
+    if mp3[:3] == b"ID3":
+        pos = 10 + (mp3[6] << 21 | mp3[7] << 14 | mp3[8] << 7 | mp3[9])
+    starts = []
+    while pos + 4 <= len(mp3) and mp3[pos] == 0xFF and len(starts) < n + 2:
+        starts.append(pos)
+        rate = (44100, 48000, 32000)[(mp3[pos + 2] >> 2) & 3]
+        pos += 144_000 * _BITRATES[mp3[pos + 2] >> 4] // rate + ((mp3[pos + 2] >> 1) & 1)
+    xing, first_kept = starts[0], starts[n + 1]
+    return mp3[:xing] + mp3[xing : starts[1]] + mp3[first_kept:]
+
+
+def drop_audio_pages(ogg: bytes) -> bytes:
+    """Drop the first half of the audio pages of an Ogg Vorbis file, keeping its header pages and
+    renumbering the rest, so the stream starts at a high granule position as a recording
+    from mid-broadcast does (finding M3)."""
+    pages, pos = [], 0
+    while pos < len(ogg):
+        nseg = ogg[pos + 26]
+        size = 27 + nseg + sum(ogg[pos + 27 : pos + 27 + nseg])
+        pages.append(bytearray(ogg[pos : pos + size]))
+        pos += size
+    headers = [pg for pg in pages if struct.unpack_from("<q", pg, 6)[0] == 0]
+    audio = pages[len(headers) :]
+    kept = headers + audio[len(audio) // 2 :]
+    out = bytearray()
+    for seq, pg in enumerate(kept):
+        struct.pack_into("<I", pg, 18, seq)
+        struct.pack_into("<I", pg, 22, 0)
+        struct.pack_into("<I", pg, 22, ogg_crc(bytes(pg)))
+        out += pg
+    return bytes(out)
+
+
+def _split_with_ffmpeg(work: Path, out: Path) -> None:
+    """A 320 kbps file split at 5 s without re-encoding (``-c copy``), as splitters do."""
+    tmp = work / f"{out.stem}_full.mp3"
+    _mp3("-b:a", "320k")(work, tmp)
+    _ffmpeg("-ss", "5", "-i", str(tmp), "-c", "copy", str(out))
+
+
 def _dark(corner: int) -> str:
     """Two 2-pole lowpass filters: a gradual 24 dB/octave roll-off, no wall of its own."""
     return f"lowpass=f={corner}:poles=2,lowpass=f={corner}:poles=2"
@@ -183,6 +232,13 @@ CASES: tuple[Case, ...] = (
          _vorbis("1")),
     Case("vorbis_no_eos.ogg", "C6", Expect(frozenset("A"), action="Keep"),
          _derived(_vorbis("6"), ".ogg", clear_eos)),
+    # Files cut at their start: the audio from there on is intact.
+    Case("split_with_ffmpeg_320.mp3", "H8", Expect(frozenset("A"), action="Keep"),
+         _split_with_ffmpeg),
+    Case("split_stale_xing_320.mp3", "H8", Expect(GOOD, action="Keep"),
+         _derived(_mp3("-b:a", "320k"), ".mp3", drop_frames_after_xing)),
+    Case("vorbis_from_mid_stream.ogg", "M3", Expect(frozenset("A"), action="Keep"),
+         _derived(_vorbis("6"), ".ogg", drop_audio_pages)),
     # Real defects and transcodes: must still be caught. Since profile 2.0 a transcode's
     # sound score reflects how it sounds (its source); G4 sets the best-copy verdict.
     Case("half_320.mp3", "C6",

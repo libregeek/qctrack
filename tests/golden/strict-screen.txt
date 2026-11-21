@@ -1,9 +1,9 @@
 File                     Album   Title                   Score  Rating       Action                 Gates  Notes
------------------------  ------  ----------------------  -----  -----------  ---------------------  -----  -------------------------------------
+-----------------------  ------  ----------------------  -----  -----------  ---------------------  -----  ----------------------------------
 /golden/lib/cut.mp3                                       39.0  F            Replace: damaged       G2
 /golden/lib/fake320.mp3  Golden  Band-limited, "quoted"   49.0  F            Replace: lossy source  G4
 /golden/lib/genuine.mp3  Golden  Genuine                 100.0  A            Keep
-/golden/lib/junk.mp3                                         -  Unsupported                         G1     Unknown; supported in a later release
+/golden/lib/junk.mp3                                         -  Unsupported                         G1     unknown format
 /golden/lib/other.opus                                       -  Unsupported                         G1     Opus; supported in a later release
 /golden/lib/silence.mp3                                   96.9  A*           Undetermined           G5
 /golden/lib/vorbis.ogg           =formula                100.0  A            Keep

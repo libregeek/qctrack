@@ -48,7 +48,9 @@ from qctrack.core.spectrogram import Spectrogram
 from qctrack.core.spectrum import SpectrumResult
 
 _ORDER = {Verdict.PASS: 0, Verdict.WARN: 1, Verdict.FAIL: 2}
-_SUPPORTED_SAMPLE_RATES = (44100, 48000)
+#: Sample rates at or above this are Pass (F1.03); higher rates add nothing for a lossy
+#: codec but are not a defect (review finding M8).
+_FULL_SAMPLE_RATE = 44100
 #: Sample rates at or below this are Fail (F1.03).
 _LOW_SAMPLE_RATE = 24000
 #: F1.05: LAME releases before this one predate its tuned presets and get a Warn.
@@ -204,7 +206,7 @@ def _vorbis_pass1(o: OggScan, profile: Profile) -> list[FactorResult]:
 
 
 def _sample_rate(rate: int, inconsistent: bool) -> FactorResult:
-    if rate in _SUPPORTED_SAMPLE_RATES:
+    if rate >= _FULL_SAMPLE_RATE:
         verdict = Verdict.PASS
     elif rate <= _LOW_SAMPLE_RATE:
         verdict = Verdict.FAIL
@@ -222,6 +224,14 @@ def _mp3_truncation(s: Mp3Scan) -> FactorResult:
     it can justify a Fail; a last frame cut short loses at most one frame (26 ms at 44.1 kHz)
     and is common in good files."""
     missing, declared = s.missing_s, s.declared_duration_s
+    if missing and s.cut_at_start and not s.truncated_bytes:
+        # Frames were removed from the start (a lossless split) and the end is intact: the
+        # header still counts the removed frames. F1.08 reports the stale length (H8).
+        return _categorical(
+            "F2.02",
+            Verdict.WARN,
+            f"cut at its start, {missing:.1f} s fewer than the header declares; end intact",
+        )
     if missing is not None and declared:
         if missing > max(_TRUNCATION_MIN_S, _TRUNCATION_MIN_FRACTION * declared):
             return _categorical(
