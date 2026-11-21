@@ -15,3 +15,18 @@ build/
 *.flac
 *.opus
 *.wav
+*.m4a
+*.mp4
+*.aac
+*.mp2
+*.wma
+*.aif
+*.aiff
+*.ape
+*.wv
+# reports from local scans can name real tracks
+/report.csv
+/report.html
+/report.json
+# corpus labels can name real tracks
+labels.csv

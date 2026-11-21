@@ -471,7 +471,7 @@ The two results (9.2), O4 (9.3) and the flags (9.4) are in requirements sections
 | R2 | Resolved (9.1): mastering is in scope; mono is a flag only (9.4) | |
 | R3 | Resolved in part (9.1): risky cases are flagged; score effect proposed in 9.4 | |
 | R6 | Structure approved and written into `requirements.md` (9.5); weights and thresholds tracked as T17 | |
-| R4 | Is a `speech` profile wanted in phase 1, or a report note that the default assumes music? | M8 |
+| R4 | Resolved (Nov 21, 2026): no `speech` profile is required | M8 |
 | R5 | Can the T10 corpus include old analog-sourced recordings, mono reissues, non-LAME encodes (iTunes, FhG), 32 kHz files, mp3gain-adjusted files and files with large cover art? | These are the false-positive cases above; without them, tuning will not catch them. |
 
 ## 11. Code cross-check results
